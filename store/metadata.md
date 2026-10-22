@@ -13,13 +13,13 @@
   - Swipe left or right to change lanes.
   - Swipe up to jump over low red-and-white hurdles.
   - Swipe down to slide under yellow overhead bars.
-  - Change lanes to get around the big blue trains.
+  - Change lanes to get around the big trains.
   - Collect coins for bonus points. Every coin is worth 10!
 
   FEATURES
   - Simple one-finger swipe controls that anyone can learn in seconds.
   - Every run is different, with a freshly mixed track each time.
-  - Bright, colourful 3D graphics.
+  - A bright, colourful 3D city with a cheerful little runner.
   - Cheerful original music and sound effects, with a mute button.
   - Your best score is saved on your device.
   - Free to play. No ads, no in-app purchases, no accounts and no internet needed.
