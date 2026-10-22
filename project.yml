@@ -1,0 +1,38 @@
+name: SubwayRunner
+options:
+  bundleIdPrefix: com.cagdasatici
+  deploymentTarget:
+    iOS: "17.0"
+packages:
+  GameCore:
+    path: GameCore
+targets:
+  SubwayRunner:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: GameCore
+      - sdk: SceneKit.framework
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Subway Runner
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        ITSAppUsesNonExemptEncryption: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cagdasatici.subwayrunner
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""   # human fills in (Task 10)
