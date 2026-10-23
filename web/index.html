@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Subway Runner</title>
+    <meta name="description" content="A free, offline 3-lane runner. Swipe to change lanes, jump and roll." />
+    <meta name="theme-color" content="#1e1b4b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Subway Runner" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="icons/icon-192.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="vignette"></div>
+
+    <section id="menu" class="screen">
+      <button id="mute" class="round" aria-label="Sound on or off">
+        <svg id="icon-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg id="icon-muted" viewBox="0 0 24 24" class="hidden"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      </button>
+      <div class="title"><span>SUBWAY</span><span>RUNNER</span></div>
+      <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M7 3h10v3h3v2a5 5 0 0 1-4.3 4.95A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12.95 5 5 0 0 1 4 8V6h3V3zm0 5H6a3 3 0 0 0 1 2.2V8zm10 0v2.2A3 3 0 0 0 18 8h-1z"/></svg><span>Best <b id="best">0</b></span></div>
+      <div class="grow"></div>
+      <button id="play" class="chunky green big"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>PLAY</button>
+      <div class="hints">
+        <div><svg viewBox="0 0 24 24"><path d="M3 12l5-5v3h8V7l5 5-5 5v-3H8v3z"/></svg>Lanes</div>
+        <div><svg viewBox="0 0 24 24"><path d="M12 3l6 7h-4v10h-4V10H6z"/></svg>Jump</div>
+        <div><svg viewBox="0 0 24 24"><path d="M12 21l-6-7h4V4h4v10h4z"/></svg>Roll</div>
+      </div>
+    </section>
+
+    <section id="hud" class="screen hidden">
+      <button id="exit" class="round" aria-label="Back to menu"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
+      <div class="pills">
+        <div class="pill"><small>SCORE</small><b id="score">0</b></div>
+        <div class="pill gold"><i class="coin"></i><b id="coins">0</b></div>
+      </div>
+    </section>
+
+    <section id="over" class="screen hidden">
+      <div class="card">
+        <div class="title small"><span>Crash!</span></div>
+        <div class="stat"><small>SCORE</small><b id="over-score">0</b></div>
+        <div class="stat gold"><i class="coin big"></i><b id="over-coins">0</b></div>
+        <div id="newbest" class="newbest hidden">New best!</div>
+        <button id="again" class="chunky orange">Play Again</button>
+        <button id="home" class="chunky blue">Menu</button>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
