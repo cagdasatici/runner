@@ -1,5 +1,5 @@
 // One-to-one port of GameCore/Sources/GameCore/Autopilot.swift.
-import { canReach, cloneState, ENDLESS_PACE, isGrounded, onRoof, Runner, speedOf, step, type Move, type Pace, type RunnerState } from './runner';
+import { canReach, cloneState, ENDLESS_PACE, isFlying, isGrounded, onRoof, Runner, speedOf, step, type Move, type Pace, type RunnerState } from './runner';
 import { obstacleLength, RAMP_LENGTH, Track, type Obstacle } from './track';
 
 /** Long trains (those with an explicit length, i.e. ramp pieces) are planned for this many metres early, so the ground runner picks its lane in time. */
@@ -107,6 +107,7 @@ export function roofMove(s: RunnerState, track: Track): Move {
  */
 export function riderMove(s: RunnerState, track: Track, pace: Pace, stars: { id: number; lane: number; z: number }[], starsTaken: Set<number>, ride = true, steer = true): Move {
   const ground = (): Move => (steer ? collectorMove(s, track, pace, stars, starsTaken) : autopilotMove(s, track, pace, undefined, true));
+  if (isFlying(s)) return 'none';
   if (!ride) return ground();
   if (s.floor === 0 && s.y > AIRBORNE_FROM_ROOF) return 'none';
   if (s.floor > 0) return onRoof(s) ? roofMove(s, track) : 'none';
@@ -171,6 +172,7 @@ export class Solver {
     const near = Track.fixed(
       full.obstacles.filter((o) => o.z + obstacleLength(o) > s.z - 10 && o.z < s.z + PLAN_WINDOW),
       full.coins.filter((c) => c.z > s.z - 10 && c.z < s.z + PLAN_WINDOW),
+      full.pickups.filter((p) => p.z > s.z - 10 && p.z < s.z + PLAN_WINDOW),
     );
     const base = this.rollout(s, near, pace, stars, taken, [], true);
     let best = base;

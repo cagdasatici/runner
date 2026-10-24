@@ -4,10 +4,11 @@
 import * as THREE from 'three';
 import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
-import { ENDLESS_PACE, isGrounded, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState } from './core/runner';
+import { ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
 import { coinY, laneX, obstacleLength, type Coin, type Track } from './core/track';
 import { RunnerFigure } from './gfx/character';
 import { CoinRenderer } from './gfx/coins';
+import { PowerVisuals } from './gfx/powerups';
 import { ParticlePool } from './gfx/effects';
 import { GoldenStarRenderer } from './gfx/goldStars';
 import { createMaterials, type Materials } from './gfx/materials';
@@ -24,7 +25,12 @@ export interface GameEvents {
   onStar(taken: number): void;
   onProgress(fraction: number): void;
   onFinish(run: LevelRun): void;
+  onPower(p: PowerHud): void;
+  onToast(text: string): void;
 }
+
+/** What the HUD needs to draw the power-up rings (fractions 0…1 of the time left) and the landing warning. */
+export interface PowerHud { board: number; magnet: number; sneakers: number; double: number; fly: number; landing: number; chaser: boolean }
 
 /** What the loop needs from either kind of run. */
 interface Play {
@@ -36,8 +42,8 @@ interface Play {
   readonly over: boolean;
 }
 
-function endlessPlay(seed: bigint): Play {
-  const s = new RunSession(seed);
+function endlessPlay(seed: bigint, opts: StartOptions): Play {
+  const s = new RunSession(seed, opts);
   return {
     get state() { return s.state; },
     get track() { return s.track; },
@@ -48,8 +54,8 @@ function endlessPlay(seed: bigint): Play {
   };
 }
 
-function levelPlay(n: number): Play {
-  const r = new LevelRun(n);
+function levelPlay(n: number, opts: StartOptions): Play {
+  const r = new LevelRun(n, opts);
   return {
     get state() { return r.state; },
     track: r.level.track,
@@ -68,6 +74,9 @@ export class Game {
   private sun: THREE.DirectionalLight;
   private figure: RunnerFigure;
   private coins: CoinRenderer;
+  private power = new PowerVisuals();
+  private lastHud = '';
+  private lastCounters = [0, 0, 0, 0];
   private stars = new GoldenStarRenderer();
   private finishArch: THREE.Group | null = null;
   private dust = new ParticlePool(160, false);
@@ -110,7 +119,7 @@ export class Game {
     this.sun = setupEnvironment(this.scene, this.renderer);
     this.figure = new RunnerFigure(this.mats);
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -140,13 +149,13 @@ export class Game {
   }
 
   /** Endless run. `skipSeconds` fast-forwards the simulation before the first frame (screenshots/tests; 0 in normal play). */
-  startRun(seed: bigint, autoplay: boolean, idle: boolean, skipSeconds = 0): void {
-    this.begin(endlessPlay(seed), autoplay, idle, skipSeconds);
+  startRun(seed: bigint, autoplay: boolean, idle: boolean, skipSeconds = 0, opts: StartOptions = {}): void {
+    this.begin(endlessPlay(seed, opts), autoplay, idle, skipSeconds);
   }
 
   /** Journey level n (1…120). */
-  startLevel(n: number, autoplay: boolean, idle: boolean, skipSeconds = 0): void {
-    this.begin(levelPlay(n), autoplay, idle, skipSeconds);
+  startLevel(n: number, autoplay: boolean, idle: boolean, skipSeconds = 0, opts: StartOptions = {}): void {
+    this.begin(levelPlay(n, opts), autoplay, idle, skipSeconds);
   }
 
   private begin(play: Play, autoplay: boolean, idle: boolean, skipSeconds: number): void {
@@ -163,6 +172,8 @@ export class Game {
     this.lastScore = this.lastCoins = this.lastProgress = -1;
     this.lastStars = 0;
     this.lastJumpTick = -100;
+    this.lastHud = '';
+    this.lastCounters = [0, 0, 0, 0];
     this.clearDynamic();
     this.clearSegments();
     const level = play.level;
@@ -266,6 +277,19 @@ export class Game {
         if (before < CELEBRATE_SECONDS && this.finishT >= CELEBRATE_SECONDS) this.events.onFinish(level);
       }
     }
+    const hud: PowerHud = {
+      board: s.board / Power.boardTicks, magnet: s.magnet / Power.magnetTicks, sneakers: s.sneakers / Power.sneakersTicks,
+      double: s.double / Power.doubleTicks, fly: s.fly / Power.flyTicks, chaser: s.chaser > 0,
+      landing: s.fly > 0 && s.fly <= Power.flyWarnTicks ? Math.ceil(s.fly / 120) : s.descend > 0 ? 1 : 0,
+    };
+    const key = [hud.board, hud.magnet, hud.sneakers, hud.double, hud.fly].map((v) => Math.round(v * 60)).join(',') + `${hud.landing}${hud.chaser}`;
+    if (key !== this.lastHud) { this.lastHud = key; this.events.onPower(hud); }
+    const [nm, cb, bb, sb] = this.lastCounters;
+    if (s.nearMisses !== nm) this.events.onToast('Close! +25');
+    else if (s.combos !== cb) this.events.onToast('Combo! +50');
+    else if (s.boardBreaks !== bb) { this.events.onToast('Board saved you!'); this.glow.burst(s.x, s.y + 0.5, -s.z, 70, { color: 0x5eead4, speed: 5, life: 0.6, size: 0.28, gravity: 4, colorJitter: 0.5 }); this.shake = 0.2; }
+    else if (s.stumbles !== sb) { this.events.onToast('Oof! Keep going!'); this.shake = 0.25; }
+    this.lastCounters = [s.nearMisses, s.combos, s.boardBreaks, s.stumbles];
     if (s.crashed && !this.crashHandled) {
       this.crashHandled = true;
       this.shake = 0.28;
@@ -312,6 +336,7 @@ export class Game {
     this.coins.update(visible, this.time, this.frameDt);
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
+    this.power.update(s, track.pickups, this.time, VIEW_AHEAD);
     this.figure.pose(s);
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
     this.camera.updateProjectionMatrix();
@@ -342,6 +367,7 @@ export class Game {
     this.obstacleNodes.clear();
     if (this.finishArch) { this.scene.remove(this.finishArch); disposeGroup(this.finishArch); this.finishArch = null; }
     this.stars.set([]);
+    this.power.clear();
     this.popped.clear();
     this.coins.clearPops();
     this.coins.update([], 0, 0);

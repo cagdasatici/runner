@@ -19,6 +19,15 @@ export interface Coin {
   y?: number; // height; COIN_Y when missing (roof coins sit at ROOF_Y + COIN_Y)
 }
 
+export type PickupKind = 'board' | 'magnet' | 'sneakers' | 'double' | 'jetpack' | 'mystery';
+export const PICKUP_KINDS: PickupKind[] = ['board', 'magnet', 'sneakers', 'double', 'jetpack', 'mystery'];
+export interface Pickup {
+  id: number;
+  kind: PickupKind;
+  lane: number;
+  z: number;
+}
+
 export const LANE_WIDTH = 2.5;
 export const FIRST_ROW_Z = 40.0;
 export const ROW_GAP = 18.0;
@@ -48,6 +57,7 @@ export const coinY = (c: Coin): number => c.y ?? COIN_Y;
 export class Track {
   obstacles: Obstacle[] = [];
   coins: Coin[] = [];
+  pickups: Pickup[] = [];
   rowsGenerated = 0;
   private rng: SplitMix64;
   private nextID = 0;
@@ -57,10 +67,11 @@ export class Track {
   }
 
   /** Hand-made track for tests. Don't call generate() on it. */
-  static fixed(obstacles: Obstacle[], coins: Coin[] = []): Track {
+  static fixed(obstacles: Obstacle[], coins: Coin[] = [], pickups: Pickup[] = []): Track {
     const t = new Track(0n);
     t.obstacles = obstacles;
     t.coins = coins;
+    t.pickups = pickups;
     return t;
   }
 
@@ -76,6 +87,7 @@ export class Track {
   dropBehind(z: number): void {
     this.obstacles = this.obstacles.filter((o) => !(o.z + obstacleLength(o) < z - 5));
     this.coins = this.coins.filter((c) => !(c.z < z - 5));
+    this.pickups = this.pickups.filter((p) => !(p.z < z - 5));
   }
 
   private addRow(row: number): void {

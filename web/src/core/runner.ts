@@ -1,6 +1,6 @@
 // One-to-one port of GameCore/Sources/GameCore/Runner.swift. Keep the step order identical:
 // move → sideways → vertical → slide timer → forward → tick → collisions → coins.
-import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, type ObstacleKind } from './track';
+import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, type ObstacleKind, type PickupKind } from './track';
 
 export type Move = 'none' | 'left' | 'right' | 'up' | 'down';
 
@@ -16,7 +16,28 @@ export interface RunnerState {
   coins: number;
   collected: Set<number>;
   crashed: boolean;
+  points: number; // coin points (10 each, ×2 with the double), added to the distance in score()
+  bonus: number; // near-miss and combo points
+  board: number; // ticks of hoverboard left (absorbs one crash)
+  magnet: number;
+  sneakers: number;
+  double: number;
+  fly: number; // ticks of jetpack left
+  descend: number; // ticks of landing left
+  iframes: number; // ticks of invulnerability left
+  slow: number; // ticks of stumble slow-down left
+  chaser: number; // ticks the chaser stays behind; a hit while > 0 is a crash
+  friendly: boolean; // true (the game's default): the first hit is a stumble with a chaser, and near-miss and combo bonuses count; false: the classic rules
+  streak: number; // coins in a row
+  lastCoinTick: number;
+  nearMisses: number; // counters, for the renderer and the HUD
+  combos: number;
+  boardBreaks: number;
+  stumbles: number;
+  pickups: number;
 }
+
+export interface StartOptions { board?: boolean; friendly?: boolean }
 
 export const Runner = {
   dt: 1.0 / 120.0,
@@ -36,6 +57,33 @@ export const Runner = {
   coinReach: 0.9,
 } as const;
 
+/** Power-ups and forgiveness. All durations are in ticks (120 per second). Tunable. */
+export const Power = {
+  boardTicks: 3600, // 30 s of hoverboard
+  magnetTicks: 1200, // 10 s
+  sneakersTicks: 960, // 8 s
+  doubleTicks: 1200, // 10 s of 2× coins
+  flyTicks: 960, // 8 s of jetpack
+  flyHeight: 5.5, // feet height while flying: above every roof
+  flyRiseTicks: 60, // 0.5 s lift-off
+  flyDescendTicks: 96, // 0.8 s landing
+  flyWarnTicks: 360, // "3-2-1" landing warning
+  iframesBoard: 180, // 1.5 s after the board breaks
+  iframesLanding: 180, // 1.5 s after touchdown
+  iframesStumble: 120, // 1 s after a stumble
+  stumbleSlowTicks: 72, // 0.6 s at 70 % speed
+  stumbleSlow: 0.7,
+  chaserTicks: 960, // the chaser stays 8 s; a second hit in that time ends the run
+  magnetRadius: 3.5, // metres
+  sneakerJump: 1.265, // × jump velocity = 1.6× jump height
+  doubleFactor: 2,
+  nearMissMargin: 0.25, // metres of clearance
+  nearMissPoints: 25,
+  comboEvery: 8, // coins in a row
+  comboPoints: 50,
+  comboGapTicks: 120, // 1 s
+} as const;
+
 /** How fast a run goes: start speed, gain per second, top speed (m/s). Endless mode uses ENDLESS_PACE. */
 export interface Pace {
   start: number;
@@ -44,8 +92,12 @@ export interface Pace {
 }
 export const ENDLESS_PACE: Pace = { start: Runner.startSpeed, accel: Runner.acceleration, max: Runner.maxSpeed };
 
-export function startState(): RunnerState {
-  return { tick: 0, z: 0, lane: 1, x: 0, y: 0, floor: 0, vy: 0, slideTicks: 0, coins: 0, collected: new Set(), crashed: false };
+export function startState(opts: StartOptions = {}): RunnerState {
+  return {
+    tick: 0, z: 0, lane: 1, x: 0, y: 0, floor: 0, vy: 0, slideTicks: 0, coins: 0, collected: new Set(), crashed: false,
+    points: 0, bonus: 0, board: opts.board ? Power.boardTicks : 0, magnet: 0, sneakers: 0, double: 0, fly: 0, descend: 0, iframes: 0,
+    slow: 0, chaser: 0, friendly: opts.friendly ?? false, streak: 0, lastCoinTick: -1000, nearMisses: 0, combos: 0, boardBreaks: 0, stumbles: 0, pickups: 0,
+  };
 }
 export function cloneState(s: RunnerState): RunnerState {
   return { ...s, collected: new Set(s.collected) };
@@ -56,7 +108,8 @@ export const onRoof = (s: RunnerState): boolean => s.floor === ROOF_Y && s.y ===
 export const isSliding = (s: RunnerState): boolean => s.slideTicks > 0;
 export const height = (s: RunnerState): number => (isSliding(s) ? Runner.slideHeight : Runner.standHeight);
 export const speedOf = (s: RunnerState, pace: Pace = ENDLESS_PACE): number => speedAtTick(s.tick, pace);
-export const score = (s: RunnerState): number => Math.trunc(s.z) + s.coins * Runner.coinValue;
+export const score = (s: RunnerState): number => Math.trunc(s.z) + s.points + s.bonus;
+export const isFlying = (s: RunnerState): boolean => s.fly > 0 || s.descend > 0;
 
 export function speedAtTick(t: number, pace: Pace = ENDLESS_PACE): number {
   return Math.min(pace.max, pace.start + pace.accel * t * Runner.dt);
@@ -100,9 +153,37 @@ export function obstacleBox(kind: ObstacleKind): { halfW: number; y0: number; y1
 // overlap(a0, a1, b0, b1) = a0 < b1 && a1 > b0 (strict)
 const overlap = (a0: number, a1: number, b0: number, b1: number): boolean => a0 < b1 && a1 > b0;
 
+/** The lane to land in when the jetpack ends: the nearest one with no train in the way for the whole landing and the invulnerable time after it. */
+export function pickLandingLane(track: Track, lane: number, z: number, speed: number): number {
+  const reach = speed * ((Power.flyDescendTicks + Power.iframesLanding) * Runner.dt) + 2;
+  const order = [lane, lane - 1, lane + 1, lane - 2, lane + 2].filter((l) => l >= 0 && l <= 2);
+  for (const l of order) {
+    if (!track.obstacles.some((o) => o.kind === 'train' && o.lane === l && o.z < z + reach && o.z + obstacleLength(o) > z - 1)) return l;
+  }
+  return lane;
+}
+
+/** What a pickup does once it is in the runner's hands. A mystery box turns into one of the others, by its id. */
+export function resolvePickup(kind: PickupKind, id: number): Exclude<PickupKind, 'mystery'> {
+  if (kind !== 'mystery') return kind;
+  const all: Exclude<PickupKind, 'mystery'>[] = ['board', 'magnet', 'sneakers', 'double', 'jetpack'];
+  return all[id % all.length];
+}
+
 export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE): RunnerState {
   if (prev.crashed) return prev;
-  const s: RunnerState = { ...prev }; // `collected` is shared with prev until a coin is picked up (copy on write)
+  const s: RunnerState = { ...prev }; // `collected` is shared with prev until something is picked up (copy on write)
+  const own = () => { if (s.collected === prev.collected) s.collected = new Set(prev.collected); };
+  const flying = prev.fly > 0 || prev.descend > 0;
+  if (!flying) { // timed power-ups pause while flying
+    if (s.board > 0) s.board -= 1;
+    if (s.magnet > 0) s.magnet -= 1;
+    if (s.sneakers > 0) s.sneakers -= 1;
+    if (s.double > 0) s.double -= 1;
+  }
+  if (s.iframes > 0) s.iframes -= 1;
+  if (s.slow > 0) s.slow -= 1;
+  if (s.chaser > 0) s.chaser -= 1;
   switch (move) {
     case 'left':
       s.lane = Math.max(0, s.lane - 1);
@@ -112,12 +193,12 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
       break;
     case 'up':
       if (isGrounded(s)) {
-        s.vy = Runner.jumpVelocity;
+        s.vy = Runner.jumpVelocity * (s.sneakers > 0 ? Power.sneakerJump : 1);
         s.slideTicks = 0;
       }
       break;
     case 'down':
-      if (!isGrounded(s)) s.vy = Math.min(s.vy, Runner.fastFallVelocity);
+      if (!isGrounded(s) && !flying) s.vy = Math.min(s.vy, Runner.fastFallVelocity);
       s.slideTicks = Runner.slideDuration;
       break;
     case 'none':
@@ -125,40 +206,98 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
   }
   const maxStep = Runner.laneSwitchSpeed * Runner.dt;
   s.x += Math.max(-maxStep, Math.min(maxStep, laneX(s.lane) - s.x));
-  if (s.y > s.floor || s.vy > 0) {
+  const speed = speedAtTick(s.tick, pace) * (s.slow > 0 ? Power.stumbleSlow : 1);
+  if (s.fly > 0) {
+    s.fly -= 1;
+    s.vy = 0;
+    s.y = Math.min(Power.flyHeight, s.y + (Power.flyHeight - s.floor) / Power.flyRiseTicks);
+    if (s.fly === 0) { // time is up: pick a clear lane and start the descent
+      s.lane = pickLandingLane(track, s.lane, s.z, speed);
+      s.descend = Power.flyDescendTicks;
+      s.iframes = Power.flyDescendTicks + Power.iframesLanding;
+    }
+  } else if (s.descend > 0) {
+    s.descend -= 1;
+    s.y -= Power.flyHeight / Power.flyDescendTicks;
+  } else if (s.y > s.floor || s.vy > 0) {
     s.vy -= Runner.gravity * Runner.dt;
     s.y += s.vy * Runner.dt;
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speedAtTick(s.tick, pace) * Runner.dt;
+  s.z += speed * Runner.dt;
   s.tick += 1;
   // land on, or ride up, whatever is under the feet now
   s.floor = floorAt(s.x, s.z, track);
-  if (s.y <= s.floor && s.vy <= 0 && (prev.y >= s.floor - 1e-9 || s.floor - s.y <= STEP_UP)) {
+  const stillFlying = s.fly > 0;
+  if (!stillFlying && s.y <= s.floor && s.vy <= 0 && (prev.y >= s.floor - 1e-9 || s.floor - s.y <= STEP_UP || s.descend > 0 || prev.descend > 0)) {
     s.y = s.floor;
     s.vy = 0;
+    if (s.descend > 0 || prev.descend > 0) s.descend = 0; // touched down
   }
 
   const h = height(s);
-  for (const o of track.obstacles) {
-    if (o.kind === 'ramp') continue;
-    const b = obstacleBox(o.kind);
-    const ox = laneX(o.lane);
-    if (
-      overlap(s.x - Runner.halfWidth, s.x + Runner.halfWidth, ox - b.halfW, ox + b.halfW) &&
-      overlap(s.y, s.y + h, b.y0, b.y1) &&
-      overlap(s.z - Runner.halfDepth, s.z + Runner.halfDepth, o.z, o.z + obstacleLength(o))
-    ) {
+  const safe = s.iframes > 0 || s.fly > 0 || s.descend > 0;
+  let hit = false;
+  if (!safe) {
+    for (const o of track.obstacles) {
+      if (o.kind === 'ramp') continue;
+      const b = obstacleBox(o.kind);
+      const ox = laneX(o.lane);
+      if (
+        overlap(s.x - Runner.halfWidth, s.x + Runner.halfWidth, ox - b.halfW, ox + b.halfW) &&
+        overlap(s.y, s.y + h, b.y0, b.y1) &&
+        overlap(s.z - Runner.halfDepth, s.z + Runner.halfDepth, o.z, o.z + obstacleLength(o))
+      ) { hit = true; break; }
+    }
+  }
+  if (hit) {
+    if (s.board > 0) { // the board takes the hit and breaks
+      s.board = 0;
+      s.boardBreaks += 1;
+      s.iframes = Power.iframesBoard;
+    } else if (s.friendly && s.chaser === 0) { // first hit: stumble, the chaser closes in
+      s.stumbles += 1;
+      s.chaser = Power.chaserTicks;
+      s.iframes = Power.iframesStumble;
+      s.slow = Power.stumbleSlowTicks;
+      s.streak = 0;
+    } else {
       s.crashed = true;
       return s;
     }
+  } else if (!stillFlying) {
+    // near miss: a hurdle jumped or a bar rolled under with less than the margin to spare, at the moment its near edge passes
+    for (const o of track.obstacles) {
+      if ((o.kind !== 'hurdle' && o.kind !== 'bar') || o.lane !== s.lane || !(prev.z < o.z && o.z <= s.z)) continue;
+      const clear = o.kind === 'hurdle' ? s.y - 1.0 : 1.2 - (s.y + h);
+      if (s.friendly && clear >= 0 && clear < Power.nearMissMargin) { s.nearMisses += 1; s.bonus += Power.nearMissPoints; }
+    }
   }
+  const mult = s.double > 0 ? Power.doubleFactor : 1;
   for (const c of track.coins) {
     if (s.collected.has(c.id)) continue;
-    if (canReach(s, c.lane, c.z, coinY(c))) {
-      if (s.collected === prev.collected) s.collected = new Set(prev.collected);
+    const pulled = s.magnet > 0 && Math.hypot(s.x - laneX(c.lane), s.z - c.z) < Power.magnetRadius;
+    if (pulled || canReach(s, c.lane, c.z, coinY(c))) {
+      own();
       s.collected.add(c.id);
       s.coins += 1;
+      s.points += Runner.coinValue * mult;
+      s.streak = s.tick - s.lastCoinTick > Power.comboGapTicks ? 1 : s.streak + 1;
+      s.lastCoinTick = s.tick;
+      if (s.friendly && s.streak % Power.comboEvery === 0) { s.combos += 1; s.bonus += Power.comboPoints; }
+    }
+  }
+  for (const p of track.pickups) {
+    if (s.collected.has(p.id) || !canReach(s, p.lane, p.z)) continue;
+    own();
+    s.collected.add(p.id);
+    s.pickups += 1;
+    switch (resolvePickup(p.kind, p.id)) {
+      case 'board': s.board = Power.boardTicks; break;
+      case 'magnet': s.magnet = Power.magnetTicks; break;
+      case 'sneakers': s.sneakers = Power.sneakersTicks; break;
+      case 'double': s.double = Power.doubleTicks; break;
+      case 'jetpack': s.fly = Power.flyTicks; s.descend = 0; break;
     }
   }
   return s;
@@ -170,7 +309,8 @@ export class RunSession {
   state: RunnerState = startState();
   track: Track;
 
-  constructor(seed: bigint) {
+  constructor(seed: bigint, opts: StartOptions = {}) {
+    this.state = startState(opts);
     this.track = new Track(seed);
     this.track.generate(RunSession.generateAhead);
   }
