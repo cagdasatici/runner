@@ -24,6 +24,7 @@ export interface GameEvents {
   onStar(taken: number): void;
   onProgress(fraction: number): void;
   onFinish(run: LevelRun): void;
+  onSpeed?(mps: number): void; // runner speed every frame (drives the adaptive music)
 }
 
 /** What the loop needs from either kind of run. */
@@ -310,6 +311,7 @@ export class Game {
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
     this.figure.pose(s);
+    this.events.onSpeed?.(speedOf(s, p.pace));
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
     this.camera.updateProjectionMatrix();
     let sx = 0, sy = 0;

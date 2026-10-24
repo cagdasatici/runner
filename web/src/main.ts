@@ -41,6 +41,7 @@ const levelName = (n: number) => { const s = levelSpec(n); return `${s.world}-${
 
 const game = new Game($('gl'), {
   onScore: (score, coins) => { $('score').textContent = String(score); $('coins').textContent = String(coins); },
+  onSpeed: (v) => audio.setSpeed(v),
   onJump: () => audio.sfx('jump'),
   onCoin: () => audio.sfx('coin'),
   onStar: (taken) => {
@@ -53,8 +54,7 @@ const game = new Game($('gl'), {
   },
   onCrash: (score, coins) => {
     const newBest = current ? false : store.record(score); // journey levels have no high score
-    audio.stopMusic();
-    audio.sfx('crash');
+    audio.sfx('crash'); // also fades the music out
     navigator.vibrate?.(60);
     $('over-title').textContent = current ? 'Oops!' : 'Crash!';
     $('over-score').textContent = String(score);
@@ -118,7 +118,7 @@ function playEndless(): void {
   resetHud(false);
   game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0);
   show('hud');
-  audio.playMusic('run');
+  audio.playMusic({ mode: 'endless' });
 }
 
 function playLevel(n: number): void {
@@ -128,13 +128,13 @@ function playLevel(n: number): void {
   $('level-chip').textContent = levelName(n);
   game.startLevel(n, autoplay, idle, autoplay ? skip : 0);
   show('hud');
-  audio.playMusic('run');
+  audio.playMusic({ mode: 'run', world: levelSpec(n).world });
 }
 
 function showResults(run: LevelRun): void {
   const n = run.level.spec.n, stars = run.stars;
   const newBest = progress.record(n, stars);
-  audio.stopMusic();
+  audio.playMusic({ mode: 'results', world: run.level.spec.world });
   audio.sfx('win');
   $('r-level').textContent = `LEVEL ${levelName(n)}`;
   document.querySelectorAll<HTMLElement>('#results .bs').forEach((el, i) => {
