@@ -27,6 +27,7 @@ export interface GameEvents {
   onBoost?(on: boolean): void;
   onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
+  onSpeed?(mps: number): void; // runner speed every frame (drives the adaptive music)
   onPower(p: PowerHud): void;
   onToast(text: string): void;
 }
@@ -356,6 +357,7 @@ export class Game {
 
     this.power.update(s, track.pickups, this.time, VIEW_AHEAD);
     this.figure.pose(s);
+    this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + 12 * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();

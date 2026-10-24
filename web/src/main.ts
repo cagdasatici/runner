@@ -81,10 +81,22 @@ function flyCoin(px: number, py: number): void {
   a.onfinish = done;
 }
 
+// Power-up state -> music/SFX: opens the top music layer, jetpack loop, landing ticks, pickup arpeggio.
+let prevPow = { any: false, fly: false, landing: 0 };
+function audioPower(p: { board: number; magnet: number; sneakers: number; double: number; fly: number; landing: number }): void {
+  const fly = p.fly > 0, any = fly || p.board > 0 || p.magnet > 0 || p.sneakers > 0 || p.double > 0;
+  if (any && !prevPow.any) audio.sfx('powerup');
+  audio.setPowerUp(any);
+  if (fly !== prevPow.fly) audio.sfx(fly ? 'jetpack' : 'jetpackStop');
+  if (p.landing !== prevPow.landing && p.landing > 0) audio.sfx('warn', p.landing);
+  prevPow = { any, fly, landing: p.landing };
+}
+
 const game = new Game($('gl'), {
-  onBoost: (on) => { document.body.classList.toggle('boosting', on); },
+  onBoost: (on) => { document.body.classList.toggle('boosting', on); audio.setBoost(on); },
   onCoinFly: flyCoin,
   onScore: (score, coins) => { $('score').textContent = String(score); $('coins').textContent = String(coins); },
+  onSpeed: (v) => audio.setSpeed(v),
   onJump: () => audio.sfx('jump'),
   onCoin: () => audio.sfx('coin'),
   onStar: (taken) => {
@@ -97,8 +109,7 @@ const game = new Game($('gl'), {
   },
   onCrash: (score, coins) => {
     const newBest = current ? false : store.record(score); // journey levels have no high score
-    audio.stopMusic();
-    audio.sfx('crash');
+    audio.sfx('crash'); // also fades the music out
     navigator.vibrate?.(60);
     $('over-title').textContent = current ? 'Oops!' : 'Crash!';
     countUp($('over-score'), score, 450, 900);
@@ -109,14 +120,14 @@ const game = new Game($('gl'), {
     later(350, () => show('over'));
   },
   onFinish: (run) => showResults(run),
-  onPower: (p) => renderPowers(p),
+  onPower: (p) => { renderPowers(p); audioPower(p); },
   onToast: (text) => {
     const el = $('toast');
     el.textContent = text;
     el.classList.remove('show');
     void el.offsetWidth; // restart the animation
     el.classList.add('show');
-    audio.sfx('star');
+    audio.sfx(text.startsWith('Close') ? 'nearmiss' : text.startsWith('Combo') ? 'combo' : text.startsWith('Board') ? 'boardbreak' : 'lane');
   },
 });
 
@@ -200,7 +211,7 @@ function playEndless(): void {
   resetHud(false);
   game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
-  audio.playMusic('run');
+  audio.playMusic({ mode: 'endless' });
 }
 
 function playLevel(n: number): void {
@@ -210,13 +221,13 @@ function playLevel(n: number): void {
   $('level-chip').textContent = levelName(n);
   game.startLevel(n, autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
-  audio.playMusic('run');
+  audio.playMusic({ mode: 'run', world: levelSpec(n).world });
 }
 
 function showResults(run: LevelRun): void {
   const n = run.level.spec.n, stars = run.stars;
   const newBest = progress.record(n, stars);
-  audio.stopMusic();
+  audio.playMusic({ mode: 'results', world: run.level.spec.world });
   audio.sfx('win');
   $('r-level').textContent = `LEVEL ${levelName(n)}`;
   document.querySelectorAll<HTMLElement>('#results .bs').forEach((el, i) => {
