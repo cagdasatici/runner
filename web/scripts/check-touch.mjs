@@ -1,5 +1,6 @@
 // Plays the built game like an iPad: 820×1180 viewport, 2× pixels, touch events only.
-// Taps PLAY, swipes right, and checks the runner changed lane. Then saves a screenshot.
+// Taps PLAY (opens the journey map), drags the map to check it scrolls, taps level 1,
+// swipes right, and checks the runner changed lane. Then saves a screenshot.
 // Usage: node scripts/check-touch.mjs http://127.0.0.1:4391/ shot.png   (with `npx vite preview` running)
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -39,9 +40,24 @@ try {
   await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   await send('Page.navigate', { url: base + '?debug=1&seed=1' });
   await sleep(3000);
-  const btn = await evaluate(`(() => { const r = document.getElementById('play').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-  await touch('touchStart', btn.x, btn.y);
+  const tap = async (selector) => {
+    const p = await evaluate(`(() => { const el = document.querySelector('${selector}'); el.scrollIntoView({ block: 'center' });
+      const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await touch('touchStart', p.x, p.y);
+    await touch('touchEnd');
+  };
+  await tap('#play');
+  await sleep(1500);
+  const onMap = await evaluate('subwayRunnerDebug().screen');
+  // drag the map down by 300 px like a finger (shows the worlds above), then check it scrolled
+  const top0 = await evaluate(`document.getElementById('map-scroll').scrollTop`);
+  await touch('touchStart', 410, 400);
+  for (let i = 1; i <= 10; i++) { await touch('touchMove', 410, 400 + i * 30); await sleep(16); }
   await touch('touchEnd');
+  await sleep(800);
+  const top1 = await evaluate(`document.getElementById('map-scroll').scrollTop`);
+  console.log('map:', onMap, 'scrollTop', top0, '->', top1);
+  await tap('.node[data-level="1"]');
   await sleep(1500);
   const before = await evaluate('subwayRunnerDebug()');
   // swipe right in 5 small steps, like a finger
@@ -54,7 +70,7 @@ try {
   console.log('after swipe: ', JSON.stringify(after));
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(shotPath, Buffer.from(shot.result.data, 'base64'));
-  ok = before?.mode === 'playing' && before.lane === 1 && after?.lane === 2;
+  ok = onMap === 'map' && top1 < top0 - 100 && before?.mode === 'playing' && before.level === 1 && before.lane === 1 && after?.lane === 2;
   ws.close();
 } finally {
   proc.kill();
