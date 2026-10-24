@@ -1,7 +1,7 @@
 // Coins drawn with two InstancedMeshes (outer disc + inner disc): 2 draw calls for every coin on screen.
 import * as THREE from 'three';
 import type { Coin } from '../core/track';
-import { COIN_Y, laneX } from '../core/track';
+import { coinY, laneX } from '../core/track';
 import type { Materials } from './materials';
 
 const MAX = 96;
@@ -11,7 +11,7 @@ export class CoinRenderer {
   readonly group = new THREE.Group();
   private outer: THREE.InstancedMesh;
   private inner: THREE.InstancedMesh;
-  private pops: { x: number; z: number; id: number; t: number }[] = [];
+  private pops: { x: number; y: number; z: number; id: number; t: number }[] = [];
   private m = new THREE.Matrix4();
   private q = new THREE.Quaternion();
   private e = new THREE.Euler();
@@ -31,7 +31,7 @@ export class CoinRenderer {
   }
 
   /** A collected coin pops up, grows and vanishes over 0.18 s. */
-  pop(c: Coin): void { this.pops.push({ x: laneX(c.lane), z: c.z, id: c.id, t: 0 }); }
+  pop(c: Coin): void { this.pops.push({ x: laneX(c.lane), y: coinY(c), z: c.z, id: c.id, t: 0 }); }
 
   clearPops(): void { this.pops = []; }
 
@@ -47,11 +47,11 @@ export class CoinRenderer {
       this.inner.setMatrixAt(n, this.m);
       n++;
     };
-    for (const c of coins) put(laneX(c.lane), COIN_Y, -c.z, c.id, 1);
+    for (const c of coins) put(laneX(c.lane), coinY(c), -c.z, c.id, 1);
     this.pops = this.pops.filter((p) => (p.t += dt) < POP_TIME);
     for (const p of this.pops) {
       const k = p.t / POP_TIME;
-      put(p.x, COIN_Y + 0.9 * k, -p.z - 1.5 * k, p.id, (1 + 0.7 * k) * (1 - k * k));
+      put(p.x, p.y + 0.9 * k, -p.z - 1.5 * k, p.id, (1 + 0.7 * k) * (1 - k * k));
     }
     for (const im of [this.outer, this.inner]) {
       im.count = n;

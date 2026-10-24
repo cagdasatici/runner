@@ -1,7 +1,7 @@
 // One-to-one port of GameCore/Sources/GameCore/Track.swift.
 import { SplitMix64 } from './rng';
 
-export type ObstacleKind = 'hurdle' | 'bar' | 'train';
+export type ObstacleKind = 'hurdle' | 'bar' | 'train' | 'ramp';
 export const OBSTACLE_KINDS: ObstacleKind[] = ['hurdle', 'bar', 'train']; // same order as Swift allCases
 
 export interface Obstacle {
@@ -9,12 +9,14 @@ export interface Obstacle {
   kind: ObstacleKind;
   lane: number; // 0 = left, 1 = middle, 2 = right
   z: number; // near edge; far edge is z + obstacleLength(o)
+  len?: number; // overrides the default length (long roof trains)
 }
 
 export interface Coin {
   id: number;
   lane: number;
   z: number;
+  y?: number; // height; COIN_Y when missing (roof coins sit at ROOF_Y + COIN_Y)
 }
 
 export const LANE_WIDTH = 2.5;
@@ -25,6 +27,10 @@ export const THIN_LENGTH = 0.5;
 export const COINS_PER_ROW = 5;
 export const COIN_SPACING = 2.0;
 export const COIN_Y = 0.9;
+export const ROOF_Y = 3.5; // top of every train: the runner stands here on a roof
+export const ROOF_TOLERANCE = 0.25; // feet this close under the roof still count as on it (lane hops, falling off an end)
+export const RAMP_LENGTH = 7.0; // a ramp rises from 0 to ROOF_Y over this distance and ends at the train's front
+export const SUPPORT_HALF = LANE_WIDTH / 2; // roofs and ramps carry the runner up to the lane border, so adjacent roofs join
 
 export function laneX(lane: number): number {
   return (lane - 1) * LANE_WIDTH;
@@ -33,8 +39,11 @@ export function rowZ(row: number): number {
   return FIRST_ROW_Z + row * ROW_GAP;
 }
 export function obstacleLength(o: Obstacle): number {
+  if (o.len !== undefined) return o.len;
+  if (o.kind === 'ramp') return RAMP_LENGTH;
   return o.kind === 'train' ? TRAIN_LENGTH : THIN_LENGTH;
 }
+export const coinY = (c: Coin): number => c.y ?? COIN_Y;
 
 export class Track {
   obstacles: Obstacle[] = [];

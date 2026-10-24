@@ -2,10 +2,10 @@
 // A run is either endless (RunSession) or a journey level (LevelRun, finite with a finish line and golden stars).
 // Fixed-step loop: one tick per Runner.dt, at most 8 ticks per frame (extra time dropped).
 import * as THREE from 'three';
-import { autopilotMove, collectorMove } from './core/autopilot';
+import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
 import { ENDLESS_PACE, isGrounded, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState } from './core/runner';
-import { COIN_Y, laneX, type Coin, type Track } from './core/track';
+import { coinY, laneX, obstacleLength, type Coin, type Track } from './core/track';
 import { RunnerFigure } from './gfx/character';
 import { CoinRenderer } from './gfx/coins';
 import { ParticlePool } from './gfx/effects';
@@ -77,12 +77,14 @@ export class Game {
   private play: Play | null = null;
   private mode: 'menu' | 'playing' = 'menu';
   private autoplay = false;
+  private solver = new Solver(true);
   private idle = false;
   private pending: Move[] = [];
   private last: number | null = null;
   private acc = 0;
   private time = 0;
   private shake = 0;
+  private camY = 0;
   private crashHandled = false;
   private finishT = -1; // seconds since the finish line (-1 = not finished)
   private lastScore = -1;
@@ -152,6 +154,7 @@ export class Game {
     this.autoplay = autoplay;
     this.idle = idle;
     this.play = play;
+    this.solver.reset();
     this.pending = [];
     this.acc = 0;
     this.shake = 0;
@@ -229,7 +232,7 @@ export class Game {
     const p = this.play!;
     if (this.autoplay) {
       if (this.idle) return 'none';
-      return p.level ? collectorMove(p.state, p.track, p.pace, p.level.level.stars, p.level.starsTaken) : autopilotMove(p.state, p.track);
+      return p.level ? this.solver.next(p.state, p.track, p.pace, p.level.level.stars, p.level.starsTaken) : autopilotMove(p.state, p.track);
     }
     return this.pending.shift() ?? 'none';
   }
@@ -274,7 +277,7 @@ export class Game {
       this.dustTimer += dt * 45;
       while (this.dustTimer >= 1) {
         this.dustTimer -= 1;
-        this.dust.burst(s.x, 0.05, -s.z + 0.25, 1, { color: 0xd6cfc4, speed: 1.4, life: 0.45, size: 0.25, dir: [0, 0.7, 0.7], spread: 0.5 });
+        this.dust.burst(s.x, s.y + 0.05, -s.z + 0.25, 1, { color: 0xd6cfc4, speed: 1.4, life: 0.45, size: 0.25, dir: [0, 0.7, 0.7], spread: 0.5 });
       }
     }
   }
@@ -289,7 +292,7 @@ export class Game {
 
     const live = new Set<number>();
     for (const o of track.obstacles) {
-      if (o.z >= s.z + VIEW_AHEAD || o.z + 12 < s.z - 10) continue;
+      if (o.z >= s.z + VIEW_AHEAD || o.z + obstacleLength(o) < s.z - 10) continue;
       live.add(o.id);
       if (!this.obstacleNodes.has(o.id)) { const g = makeObstacle(o, this.mats); this.obstacleNodes.set(o.id, g); this.scene.add(g); }
     }
@@ -302,7 +305,7 @@ export class Game {
         if (!this.popped.has(c.id)) {
           this.popped.add(c.id);
           this.coins.pop(c);
-          this.glow.burst(laneX(c.lane), COIN_Y, -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
+          this.glow.burst(laneX(c.lane), coinY(c), -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
         }
       } else visible.push(c);
     }
@@ -312,6 +315,7 @@ export class Game {
     this.figure.pose(s);
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
     this.camera.updateProjectionMatrix();
+    this.camY += (s.floor * 0.7 - this.camY) * Math.min(1, this.frameDt * 5); // glide up with the roof
     let sx = 0, sy = 0;
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - this.frameDt);
@@ -319,7 +323,7 @@ export class Game {
       sx = Math.sin(this.time * 90) * 0.22 * k;
       sy = -sx * 0.6;
     }
-    this.camera.position.set(s.x * 0.6 + sx, 4.0 + sy, -s.z + 7.2);
+    this.camera.position.set(s.x * 0.6 + sx, 4.0 + this.camY + sy, -s.z + 7.2);
     this.camera.rotation.set(-0.2, 0, 0);
     followSun(this.sun, s.x, -s.z);
   }
