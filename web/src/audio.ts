@@ -67,7 +67,14 @@ function makeSounds(): Record<string, Buf> {
   coin.add(0.06, 0.14, 0.2, square(freq(88), 0.5));
   const jump = new Buf(0.15);
   jump.add(0, 0.15, 0.2, sweep(300, 600, 0.15));
+  const star = new Buf(0.45); // golden star: quick rising sparkle
+  [84, 88, 91, 96].forEach((m, i) => star.add(i * 0.05, 0.25, 0.16, square(freq(m), 0.5)));
+  const win = new Buf(1.3); // level complete: little fanfare
+  [72, 76, 79].forEach((m, i) => win.add(i * 0.12, 0.12, 0.2, square(freq(m), 0.5)));
+  for (const m of [72, 76, 79, 84]) win.add(0.36, 0.9, 0.1, triangle(freq(m)));
+  win.add(0.36, 0.9, 0.14, square(freq(84), 0.25));
   return {
+    star, win,
     menu: music(100, [C, Am, F, G], 0.16 * 0.6, false),
     run: music(140, [C, G, Am, F], 0.16, true),
     crash, coin, jump,

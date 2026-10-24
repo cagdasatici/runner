@@ -24,9 +24,13 @@
         <svg id="icon-muted" viewBox="0 0 24 24" class="hidden"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
       </button>
       <div class="title"><span>SUBWAY</span><span>RUNNER</span></div>
-      <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M7 3h10v3h3v2a5 5 0 0 1-4.3 4.95A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12.95 5 5 0 0 1 4 8V6h3V3zm0 5H6a3 3 0 0 0 1 2.2V8zm10 0v2.2A3 3 0 0 0 18 8h-1z"/></svg><span>Best <b id="best">0</b></span></div>
+      <div class="chips">
+        <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.6l-6 3.3 1.3-6.7-5-4.7 6.8-.8z"/></svg><span><b id="total-stars">0</b> / 360</span></div>
+        <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M7 3h10v3h3v2a5 5 0 0 1-4.3 4.95A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12.95 5 5 0 0 1 4 8V6h3V3zm0 5H6a3 3 0 0 0 1 2.2V8zm10 0v2.2A3 3 0 0 0 18 8h-1z"/></svg><span>Best <b id="best">0</b></span></div>
+      </div>
       <div class="grow"></div>
       <button id="play" class="chunky green big"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>PLAY</button>
+      <button id="endless" class="chunky blue small">Endless run</button>
       <div class="hints">
         <div><svg viewBox="0 0 24 24"><path d="M3 12l5-5v3h8V7l5 5-5 5v-3H8v3z"/></svg>Lanes</div>
         <div><svg viewBox="0 0 24 24"><path d="M12 3l6 7h-4v10h-4V10H6z"/></svg>Jump</div>
@@ -34,22 +38,52 @@
       </div>
     </section>
 
+    <section id="map" class="screen hidden">
+      <div id="map-scroll" class="scroll"></div>
+      <div class="mapbar">
+        <button id="map-home" class="round" aria-label="Back to menu"><svg viewBox="0 0 24 24"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3z"/></svg></button>
+        <div class="mtitle">Journey</div>
+        <div class="pill gold"><svg viewBox="0 0 24 24" class="st"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.6l-6 3.3 1.3-6.7-5-4.7 6.8-.8z"/></svg><b id="map-stars">0</b><small>/360</small></div>
+      </div>
+    </section>
+
     <section id="hud" class="screen hidden">
-      <button id="exit" class="round" aria-label="Back to menu"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
+      <button id="exit" class="round" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
+      <div id="level-bar" class="level-bar hidden">
+        <div id="level-chip" class="lvlchip">1-1</div>
+        <div class="track"><div id="progress-fill" class="fill"></div><i id="progress-me" class="me"></i><i class="flag"></i></div>
+      </div>
       <div class="pills">
-        <div class="pill"><small>SCORE</small><b id="score">0</b></div>
+        <div id="score-pill" class="pill"><small>SCORE</small><b id="score">0</b></div>
+        <div id="star-slots" class="slots hidden"><span></span><span></span><span></span></div>
         <div class="pill gold"><i class="coin"></i><b id="coins">0</b></div>
       </div>
     </section>
 
     <section id="over" class="screen hidden">
       <div class="card">
-        <div class="title small"><span>Crash!</span></div>
+        <div class="title small"><span id="over-title">Crash!</span></div>
         <div class="stat"><small>SCORE</small><b id="over-score">0</b></div>
         <div class="stat gold"><i class="coin big"></i><b id="over-coins">0</b></div>
         <div id="newbest" class="newbest hidden">New best!</div>
         <button id="again" class="chunky orange">Play Again</button>
         <button id="home" class="chunky blue">Menu</button>
+      </div>
+    </section>
+
+    <section id="results" class="screen hidden">
+      <div class="rcard">
+        <div id="r-level" class="ribbon">LEVEL 1-1</div>
+        <div class="bigstars"><div class="bs s0"></div><div class="bs s1"></div><div class="bs s2"></div></div>
+        <div id="r-cheer" class="cheer">Great!</div>
+        <div class="rrow"><span class="lbl">Golden stars</span><span id="r-gold" class="gs"></span></div>
+        <div class="rrow"><i class="coin"></i><div class="cbar"><div id="r-cfill" class="cfill"></div><i class="mark"></i></div><b id="r-coins" class="cnum">0/0</b></div>
+        <div id="r-best" class="newbest hidden">New best!</div>
+        <div class="rbtns">
+          <button id="r-map" class="rb blue" aria-label="Map"><svg viewBox="0 0 24 24"><path d="M9 4l6 2 5-2v16l-5 2-6-2-5 2V6zm0 2.2v11.6l6 2V8.2z"/></svg></button>
+          <button id="r-retry" class="rb orange" aria-label="Retry"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button>
+          <button id="r-next" class="rb green wide">Next <svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+        </div>
       </div>
     </section>
 

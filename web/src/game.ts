@@ -1,22 +1,63 @@
 // Port of App/GameController.swift + the menu backdrop: one WebGL canvas, two modes (menu, playing).
-// Fixed-step loop: session.tick() runs once per Runner.dt, at most 8 ticks per frame (extra time dropped).
+// A run is either endless (RunSession) or a journey level (LevelRun, finite with a finish line and golden stars).
+// Fixed-step loop: one tick per Runner.dt, at most 8 ticks per frame (extra time dropped).
 import * as THREE from 'three';
-import { autopilotMove } from './core/autopilot';
-import { isGrounded, Runner, RunSession, score, speedOf, type Move } from './core/runner';
-import { COIN_Y, laneX, type Coin } from './core/track';
+import { autopilotMove, collectorMove } from './core/autopilot';
+import { LevelRun } from './core/level';
+import { ENDLESS_PACE, isGrounded, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState } from './core/runner';
+import { COIN_Y, laneX, type Coin, type Track } from './core/track';
 import { RunnerFigure } from './gfx/character';
 import { CoinRenderer } from './gfx/coins';
 import { ParticlePool } from './gfx/effects';
+import { GoldenStarRenderer } from './gfx/goldStars';
 import { createMaterials, type Materials } from './gfx/materials';
-import { disposeGroup, followSun, makeObstacle, makeSegment, SEGMENT_LENGTH, setupEnvironment } from './gfx/world';
+import { disposeGroup, followSun, makeFinishArch, makeObstacle, makeSegment, SEGMENT_LENGTH, setupEnvironment } from './gfx/world';
 
 const VIEW_AHEAD = 115;
+const CELEBRATE_SECONDS = 1.2; // the runner jogs on past the finish line before the results card
 
 export interface GameEvents {
   onScore(score: number, coins: number): void;
   onCrash(score: number, coins: number): void;
   onJump(): void;
   onCoin(): void;
+  onStar(taken: number): void;
+  onProgress(fraction: number): void;
+  onFinish(run: LevelRun): void;
+}
+
+/** What the loop needs from either kind of run. */
+interface Play {
+  state: RunnerState;
+  track: Track;
+  pace: Pace;
+  level: LevelRun | null;
+  tick(move: Move): void;
+  readonly over: boolean;
+}
+
+function endlessPlay(seed: bigint): Play {
+  const s = new RunSession(seed);
+  return {
+    get state() { return s.state; },
+    get track() { return s.track; },
+    pace: ENDLESS_PACE,
+    level: null,
+    tick: (m) => s.tick(m),
+    get over() { return s.state.crashed; },
+  };
+}
+
+function levelPlay(n: number): Play {
+  const r = new LevelRun(n);
+  return {
+    get state() { return r.state; },
+    track: r.level.track,
+    pace: r.level.spec.pace,
+    level: r,
+    tick: (m) => r.tick(m),
+    get over() { return r.over; },
+  };
 }
 
 export class Game {
@@ -27,11 +68,13 @@ export class Game {
   private sun: THREE.DirectionalLight;
   private figure: RunnerFigure;
   private coins: CoinRenderer;
+  private stars = new GoldenStarRenderer();
+  private finishArch: THREE.Group | null = null;
   private dust = new ParticlePool(160, false);
   private glow = new ParticlePool(400, true);
   private segments = new Map<number, THREE.Group>();
   private obstacleNodes = new Map<number, THREE.Group>();
-  private session: RunSession | null = null;
+  private play: Play | null = null;
   private mode: 'menu' | 'playing' = 'menu';
   private autoplay = false;
   private idle = false;
@@ -41,8 +84,11 @@ export class Game {
   private time = 0;
   private shake = 0;
   private crashHandled = false;
+  private finishT = -1; // seconds since the finish line (-1 = not finished)
   private lastScore = -1;
   private lastCoins = -1;
+  private lastStars = 0;
+  private lastProgress = -1;
   private lastJumpTick = -100;
   private dustTimer = 0;
   private frameDt = 0;
@@ -62,7 +108,7 @@ export class Game {
     this.sun = setupEnvironment(this.scene, this.renderer);
     this.figure = new RunnerFigure(this.mats);
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.figure.root, this.coins.group, this.dust.points, this.glow.points);
+    this.scene.add(this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -84,28 +130,45 @@ export class Game {
 
   showMenu(): void {
     this.mode = 'menu';
-    this.session = null;
+    this.play = null;
     this.clearDynamic();
     this.clearSegments();
     for (let k = -7; k <= 1; k++) this.addSegment(k); // the menu camera looks back along +z
     followSun(this.sun, 0, 0);
   }
 
-  /** `skipSeconds` fast-forwards the simulation before the first frame (for screenshots/tests; 0 in normal play). */
+  /** Endless run. `skipSeconds` fast-forwards the simulation before the first frame (screenshots/tests; 0 in normal play). */
   startRun(seed: bigint, autoplay: boolean, idle: boolean, skipSeconds = 0): void {
+    this.begin(endlessPlay(seed), autoplay, idle, skipSeconds);
+  }
+
+  /** Journey level n (1…120). */
+  startLevel(n: number, autoplay: boolean, idle: boolean, skipSeconds = 0): void {
+    this.begin(levelPlay(n), autoplay, idle, skipSeconds);
+  }
+
+  private begin(play: Play, autoplay: boolean, idle: boolean, skipSeconds: number): void {
     this.mode = 'playing';
     this.autoplay = autoplay;
     this.idle = idle;
-    this.session = new RunSession(seed);
+    this.play = play;
     this.pending = [];
     this.acc = 0;
     this.shake = 0;
     this.crashHandled = false;
-    this.lastScore = this.lastCoins = -1;
+    this.finishT = -1;
+    this.lastScore = this.lastCoins = this.lastProgress = -1;
+    this.lastStars = 0;
     this.lastJumpTick = -100;
     this.clearDynamic();
     this.clearSegments();
-    for (let i = 0; i < skipSeconds / Runner.dt && !this.session.state.crashed; i++) this.session.tick(this.nextMove());
+    const level = play.level;
+    this.stars.set(level ? level.level.stars : []);
+    if (level) {
+      this.finishArch = makeFinishArch(level.level.finishZ, this.mats);
+      this.scene.add(this.finishArch);
+    }
+    for (let i = 0; i < skipSeconds / Runner.dt && !play.over; i++) play.tick(this.nextMove());
     this.sync();
   }
 
@@ -126,17 +189,20 @@ export class Game {
       this.camera.fov = 66;
       this.camera.updateProjectionMatrix();
       this.camera.lookAt(0, 1.35, 0);
-    } else if (this.session) {
-      if (!this.session.state.crashed) {
+    } else if (this.play) {
+      const play = this.play;
+      if (!play.over) {
         this.acc += dt;
         let ticks = 0;
         while (this.acc >= Runner.dt && ticks < 8) {
           this.acc -= Runner.dt;
           ticks++;
-          this.session.tick(this.nextMove());
-          if (this.session.state.crashed) break;
+          play.tick(this.nextMove());
+          if (play.over) break;
         }
         if (ticks === 8) this.acc = 0;
+      } else if (play.level?.finished && this.finishT < CELEBRATE_SECONDS) {
+        for (let i = 0; i < Math.round(dt / Runner.dt); i++) play.level.coast();
       }
       this.sync();
       this.report(dt);
@@ -153,19 +219,23 @@ export class Game {
   drawCalls(): number { return this.renderer.info.render.calls; }
 
   /** Read-only snapshot for automated checks (exposed only with ?debug=1). */
-  debugState(): { mode: string; lane: number; tick: number; score: number; crashed: boolean } {
-    const s = this.session?.state;
-    return { mode: this.mode, lane: s?.lane ?? -1, tick: s?.tick ?? 0, score: s ? score(s) : 0, crashed: s?.crashed ?? false };
+  debugState(): { mode: string; lane: number; tick: number; score: number; crashed: boolean; level: number; finished: boolean; stars: number } {
+    const s = this.play?.state, l = this.play?.level;
+    return { mode: this.mode, lane: s?.lane ?? -1, tick: s?.tick ?? 0, score: s ? score(s) : 0, crashed: s?.crashed ?? false,
+      level: l?.level.spec.n ?? 0, finished: l?.finished ?? false, stars: l?.starsTaken.size ?? 0 };
   }
 
   private nextMove(): Move {
-    const s = this.session!;
-    if (this.autoplay) return this.idle ? 'none' : autopilotMove(s.state, s.track);
+    const p = this.play!;
+    if (this.autoplay) {
+      if (this.idle) return 'none';
+      return p.level ? collectorMove(p.state, p.track, p.pace, p.level.level.stars, p.level.starsTaken) : autopilotMove(p.state, p.track);
+    }
     return this.pending.shift() ?? 'none';
   }
 
   private report(dt: number): void {
-    const s = this.session!.state;
+    const p = this.play!, s = p.state, level = p.level;
     if (s.vy > 0 && s.tick - this.lastJumpTick > 30) { this.lastJumpTick = s.tick; this.events.onJump(); }
     if (this.lastCoins >= 0 && s.coins !== this.lastCoins) this.events.onCoin();
     const sc = score(s);
@@ -173,6 +243,25 @@ export class Game {
       this.lastScore = sc;
       this.lastCoins = s.coins;
       this.events.onScore(sc, s.coins);
+    }
+    if (level) {
+      if (level.starsTaken.size !== this.lastStars) {
+        this.lastStars = level.starsTaken.size;
+        this.events.onStar(this.lastStars);
+        const g = level.level.stars.find((x) => level.starsTaken.has(x.id) && Math.abs(x.z - s.z) < 2);
+        if (g) this.glow.burst(laneX(g.lane), 1.3, -g.z, 40, { color: 0xffd23f, speed: 4.5, life: 0.5, size: 0.26, colorJitter: 0.3 });
+      }
+      const f = Math.min(1, s.z / level.level.finishZ);
+      if (Math.abs(f - this.lastProgress) >= 0.002) { this.lastProgress = f; this.events.onProgress(f); }
+      if (level.finished) {
+        if (this.finishT < 0) {
+          this.finishT = 0;
+          this.glow.burst(s.x, 2.5, -level.level.finishZ, 120, { color: 0xfde047, speed: 6, life: 0.9, size: 0.3, gravity: 4, colorJitter: 0.8 });
+        }
+        const before = this.finishT;
+        this.finishT += dt;
+        if (before < CELEBRATE_SECONDS && this.finishT >= CELEBRATE_SECONDS) this.events.onFinish(level);
+      }
     }
     if (s.crashed && !this.crashHandled) {
       this.crashHandled = true;
@@ -190,9 +279,9 @@ export class Game {
     }
   }
 
-  /** Makes scene objects match the session: adds new things, removes passed or collected ones. */
+  /** Makes scene objects match the run: adds new things, removes passed or collected ones. */
   private sync(): void {
-    const s = this.session!.state, track = this.session!.track;
+    const p = this.play!, s = p.state, track = p.track;
     const firstSeg = Math.max(-1, Math.trunc((s.z - 10) / SEGMENT_LENGTH) - 1);
     const lastSeg = Math.trunc((s.z + VIEW_AHEAD) / SEGMENT_LENGTH);
     for (let k = firstSeg; k <= lastSeg; k++) if (!this.segments.has(k)) this.addSegment(k);
@@ -200,7 +289,7 @@ export class Game {
 
     const live = new Set<number>();
     for (const o of track.obstacles) {
-      if (o.z >= s.z + VIEW_AHEAD) continue;
+      if (o.z >= s.z + VIEW_AHEAD || o.z + 12 < s.z - 10) continue;
       live.add(o.id);
       if (!this.obstacleNodes.has(o.id)) { const g = makeObstacle(o, this.mats); this.obstacleNodes.set(o.id, g); this.scene.add(g); }
     }
@@ -208,7 +297,7 @@ export class Game {
 
     const visible: Coin[] = [];
     for (const c of track.coins) {
-      if (c.z >= s.z + VIEW_AHEAD) continue;
+      if (c.z >= s.z + VIEW_AHEAD || c.z < s.z - 5) continue;
       if (s.collected.has(c.id)) {
         if (!this.popped.has(c.id)) {
           this.popped.add(c.id);
@@ -218,9 +307,10 @@ export class Game {
       } else visible.push(c);
     }
     this.coins.update(visible, this.time, this.frameDt);
+    if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
     this.figure.pose(s);
-    this.camera.fov = 66 + (speedOf(s) - Runner.startSpeed); // 66° → 76° as it speeds up
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
     this.camera.updateProjectionMatrix();
     let sx = 0, sy = 0;
     if (this.shake > 0) {
@@ -246,6 +336,8 @@ export class Game {
   private clearDynamic(): void {
     for (const g of this.obstacleNodes.values()) { this.scene.remove(g); disposeGroup(g); }
     this.obstacleNodes.clear();
+    if (this.finishArch) { this.scene.remove(this.finishArch); disposeGroup(this.finishArch); this.finishArch = null; }
+    this.stars.set([]);
     this.popped.clear();
     this.coins.clearPops();
     this.coins.update([], 0, 0);
