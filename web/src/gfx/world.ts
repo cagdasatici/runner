@@ -168,7 +168,7 @@ function building(c: Ctx, side: number, zc: number, h: number, t: Theme): void {
   const fx = cx - side * (w / 2 + 0.06);
   const neon = t.neon[rng.int(t.neon.length)];
   box(c, m.vc, fx, 1.35, zc, 0.16, 2.1, d - 1.2, 0x2a3550, { ao: 0.2 });
-  if (t.windowGlow > 0.3) box(c, m.glow, fx - side * 0.09, 1.3, zc, 0.04, 1.4, d - 2.2, 0xffd9a0, { glow: 0.8 + t.windowGlow * 0.6 });
+  if (t.windowGlow > 0.3) box(c, m.glow, fx - side * 0.09, 1.3, zc, 0.04, 1.4, d - 2.2, 0xffd9a0, { glow: 0.55 + t.windowGlow * 0.25 });
   const nA = 4;
   for (let i = 0; i < nA; i++) {
     box(c, m.vc, fx - side * 0.5, 2.55, zc - (d - 1.2) / 2 + (i + 0.5) * (d - 1.2) / nA, 1.2, 0.18, (d - 1.2) / nA, i % 2 ? 0xffffff : neon, { top: 0.1 });
