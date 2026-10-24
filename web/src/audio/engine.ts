@@ -10,7 +10,8 @@ import { degreeToMidi, makeRng, midiToFreq } from './theory';
 export const LOOKAHEAD = 0.14;        // seconds scheduled ahead of currentTime
 export const TICK_MS = 25;
 export const MAX_VOICES = 22;         // hard cap is below 24 on purpose
-export const MASTER_LEVEL = 0.8;
+export const MASTER_LEVEL = 0.6;
+export const MUSIC_TRIM = 0.2;
 export const DUCK_GAIN = 0.5;         // -6 dB
 
 interface Bus { dry: GainNode; wet: GainNode; echo: GainNode; wetAmt: number; echoAmt: number }
@@ -73,7 +74,8 @@ export class MusicEngine {
     this.duck = ctx.createGain();
     this.musicFilter = ctx.createBiquadFilter();
     this.musicFilter.type = 'lowpass'; this.musicFilter.frequency.value = 5200; this.musicFilter.Q.value = 0.6;
-    this.musicFilter.connect(this.duck); this.duck.connect(this.master);
+    const trim = ctx.createGain(); trim.gain.value = MUSIC_TRIM; // music sits under the SFX
+    this.musicFilter.connect(this.duck); this.duck.connect(trim); trim.connect(this.master);
 
     // reverb (generated impulse) and tempo-synced echo
     this.revIn = ctx.createGain();
@@ -138,6 +140,7 @@ export class MusicEngine {
   }
 
   private claim(prio: number): boolean {
+    if (!this.realtime) return true; // offline renders pre-schedule everything, so the live voice cap does not apply
     if (this.voices >= MAX_VOICES + 1) return false;
     if (this.voices >= MAX_VOICES - 6 && prio < 2) return false; // drop hats/arps first when busy
     if (this.voices >= MAX_VOICES - 2 && prio < 3) return false;
