@@ -47,6 +47,11 @@ export function createMaterials() {
     trainBottom: lambert(0x1f2937),
     headlight: lambert(0xffffff, 0xfff3c4),
     wheel: lambert(0x111827),
+    // finish line
+    finishBanner: new THREE.MeshLambertMaterial({ map: T.finishBannerTexture() }),
+    checker: mapped(T.checkerTexture()),
+    finishPost: lambert(0xffffff),
+    finishBall: lambert(0xfde047, 0x6b5500),
     // coins
     gold: std(0xfbbf24, 0.25, 0.9, 0x5c3d00),
     goldDark: std(0xd97706, 0.3, 0.9, 0x3a2600),

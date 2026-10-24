@@ -5,7 +5,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { SplitMix64 } from '../core/rng';
 import { laneX, TRAIN_LENGTH, type Obstacle } from '../core/track';
 import type { Materials } from './materials';
-import { boxGeo, cylinderGeo, sphereGeo } from './shapes';
+import { boxGeo, cylinderGeo, mesh, sphereGeo } from './shapes';
 import { skyTexture } from './textures';
 
 export const SEGMENT_LENGTH = 18.0;
@@ -165,6 +165,27 @@ export function makeObstacle(o: Obstacle, m: Materials): THREE.Group {
   g.position.set(laneX(o.lane), 0, -zCenter);
   return g;
 }
+
+/** Finish arch over all three lanes (posts, banner, checkered ground line). `z` is the finish distance. */
+export function makeFinishArch(z: number, m: Materials): THREE.Group {
+  const g = new THREE.Group();
+  for (const side of [-1, 1]) {
+    g.add(mesh(cylinderGeo(0.22, 6), m.finishPost, side * 4.3, 3, 0));
+    g.add(mesh(sphereGeo(0.4), m.finishBall, side * 4.3, 6.2, 0));
+  }
+  // Three's box face order: +x, -x, +y, -y, +z (toward the runner), -z
+  const banner = new THREE.Mesh(boxGeo(9, 1.6, 0.2), [m.finishPost, m.finishPost, m.finishPost, m.finishPost, m.finishBanner, m.finishPost]);
+  banner.position.y = 5.4;
+  g.add(banner);
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 0.55), m.checker);
+  line.rotation.x = -Math.PI / 2;
+  line.position.y = 0.2;
+  g.add(line);
+  g.traverse((o) => { o.castShadow = true; });
+  g.position.z = -z;
+  return g;
+}
+
 
 /** Frees a built group's geometry (materials are shared and stay). */
 export function disposeGroup(g: THREE.Object3D): void {

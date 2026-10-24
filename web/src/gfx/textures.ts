@@ -216,3 +216,35 @@ export function dotTexture(): THREE.Texture {
     }),
   );
 }
+
+/** Finish banner: red band with "FINISH" between two checkered strips. */
+export function finishBannerTexture(): THREE.Texture {
+  return texture(
+    canvas(512, 96, (c) => {
+      for (let y = 0; y < 2; y++) for (let x = 0; x < 32; x++) {
+        c.fillStyle = (x + y) % 2 ? hex(0x111827) : hex(0xffffff);
+        c.fillRect(x * 16, y * 16, 16, 16);
+        c.fillRect(x * 16, 64 + y * 16, 16, 16);
+      }
+      c.fillStyle = hex(0xef4444);
+      c.fillRect(0, 32, 512, 32);
+      c.fillStyle = hex(0xffffff);
+      c.font = '900 30px sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText('F I N I S H', 256, 49);
+    }),
+  );
+}
+
+/** Checkered finish line on the ground (2 rows of squares). */
+export function checkerTexture(): THREE.Texture {
+  return texture(
+    canvas(256, 16, (c) => {
+      for (let x = 0; x < 32; x++) for (let y = 0; y < 2; y++) {
+        c.fillStyle = (x + y) % 2 ? hex(0x111827) : hex(0xffffff);
+        c.fillRect(x * 8, y * 8, 8, 8);
+      }
+    }),
+  );
+}
