@@ -35,6 +35,14 @@ export const Runner = {
   coinReach: 0.9,
 } as const;
 
+/** How fast a run goes: start speed, gain per second, top speed (m/s). Endless mode uses ENDLESS_PACE. */
+export interface Pace {
+  start: number;
+  accel: number;
+  max: number;
+}
+export const ENDLESS_PACE: Pace = { start: Runner.startSpeed, accel: Runner.acceleration, max: Runner.maxSpeed };
+
 export function startState(): RunnerState {
   return { tick: 0, z: 0, lane: 1, x: 0, y: 0, vy: 0, slideTicks: 0, coins: 0, collected: new Set(), crashed: false };
 }
@@ -45,11 +53,16 @@ export function cloneState(s: RunnerState): RunnerState {
 export const isGrounded = (s: RunnerState): boolean => s.y === 0 && s.vy === 0;
 export const isSliding = (s: RunnerState): boolean => s.slideTicks > 0;
 export const height = (s: RunnerState): number => (isSliding(s) ? Runner.slideHeight : Runner.standHeight);
-export const speedOf = (s: RunnerState): number => speedAtTick(s.tick);
+export const speedOf = (s: RunnerState, pace: Pace = ENDLESS_PACE): number => speedAtTick(s.tick, pace);
 export const score = (s: RunnerState): number => Math.trunc(s.z) + s.coins * Runner.coinValue;
 
-export function speedAtTick(t: number): number {
-  return Math.min(Runner.maxSpeed, Runner.startSpeed + Runner.acceleration * t * Runner.dt);
+export function speedAtTick(t: number, pace: Pace = ENDLESS_PACE): number {
+  return Math.min(pace.max, pace.start + pace.accel * t * Runner.dt);
+}
+
+/** True when the runner is close enough to pick up a coin (or golden star) floating at COIN_Y in `lane` at `z`. */
+export function canReach(s: RunnerState, lane: number, z: number): boolean {
+  return Math.abs(s.x - laneX(lane)) < Runner.coinReach && Math.abs(s.z - z) < Runner.coinReach && s.y <= COIN_Y && COIN_Y <= s.y + height(s);
 }
 
 /** Box of an obstacle: x half-width, y bottom, y top. */
@@ -67,7 +80,7 @@ export function obstacleBox(kind: ObstacleKind): { halfW: number; y0: number; y1
 // overlap(a0, a1, b0, b1) = a0 < b1 && a1 > b0 (strict)
 const overlap = (a0: number, a1: number, b0: number, b1: number): boolean => a0 < b1 && a1 > b0;
 
-export function step(prev: RunnerState, move: Move, track: Track): RunnerState {
+export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE): RunnerState {
   if (prev.crashed) return prev;
   const s = cloneState(prev);
   switch (move) {
@@ -101,7 +114,7 @@ export function step(prev: RunnerState, move: Move, track: Track): RunnerState {
     }
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speedAtTick(s.tick) * Runner.dt;
+  s.z += speedAtTick(s.tick, pace) * Runner.dt;
   s.tick += 1;
 
   const h = height(s);
@@ -119,12 +132,7 @@ export function step(prev: RunnerState, move: Move, track: Track): RunnerState {
   }
   for (const c of track.coins) {
     if (s.collected.has(c.id)) continue;
-    if (
-      Math.abs(s.x - laneX(c.lane)) < Runner.coinReach &&
-      Math.abs(s.z - c.z) < Runner.coinReach &&
-      s.y <= COIN_Y &&
-      COIN_Y <= s.y + h
-    ) {
+    if (canReach(s, c.lane, c.z)) {
       s.collected.add(c.id);
       s.coins += 1;
     }
