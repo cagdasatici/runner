@@ -1,205 +1,259 @@
-// Port of App/World.swift. Pure visuals: never reads or changes game rules beyond positions.
-// World → scene mapping: scene position = (x, y, -z).
+// The themed world: sky + lights + fog + skyline backdrop (Environment), 18 m track/city segments, the finish arch.
+// World → scene mapping: scene position = (x, y, -z). Pure visuals: never reads or changes game rules.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SplitMix64 } from '../core/rng';
-import { laneX, obstacleLength, RAMP_LENGTH, ROOF_Y, type Obstacle } from '../core/track';
-import type { Materials } from './materials';
-import { boxGeo, cylinderGeo, mesh, sphereGeo } from './shapes';
-import { skyTexture } from './textures';
+import { laneX } from '../core/track';
+import { applyThemeToMaterials, type EnvMaterials } from './envMaterials';
+import { backdropTexture, mix, skyTexture } from './envTextures';
+import { Merger } from './merge';
+import { BOX, box, CONE, CYL, ICO, placeProp, placeShrub, type Ctx } from './props';
+import { clearVehicleCache } from './vehicles';
+import type { Theme } from './themes';
 
+export { makeObstacle } from './vehicles';
 export const SEGMENT_LENGTH = 18.0;
+const SHADOW_BOX = 14;
 
-/** Collects transformed pieces per material, then merges each material's pieces into one mesh (few draw calls). */
-class Merger {
-  private parts = new Map<THREE.Material, THREE.BufferGeometry[]>();
-  add(geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number,
-      opts: { rotX?: number; rotZ?: number; uv?: [number, number] } = {}): void {
-    let g = geo.index ? geo.toNonIndexed() : geo.clone();
-    if (opts.uv) {
-      const uv = g.getAttribute('uv') as THREE.BufferAttribute;
-      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * opts.uv[0], uv.getY(i) * opts.uv[1]);
-    }
-    if (opts.rotX) g.rotateX(opts.rotX);
-    if (opts.rotZ) g.rotateZ(opts.rotZ);
-    g.translate(x, y, z);
-    const list = this.parts.get(mat) ?? [];
-    list.push(g);
-    this.parts.set(mat, list);
-    if (g !== geo) geo.dispose();
+/** Sky, image lighting for shiny materials, sun with shadows, fog and the distant skyline. Call `apply` to (re)theme. */
+export class Environment {
+  readonly sun = new THREE.DirectionalLight(0xffffff, 2.5);
+  readonly hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5);
+  private backdrop: THREE.Mesh;
+  private backdropMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, fog: false });
+  private skyTex: THREE.Texture | null = null;
+  private envTex: THREE.Texture | null = null;
+  private pmrem: THREE.PMREMGenerator;
+  theme: Theme | null = null;
+
+  constructor(private scene: THREE.Scene, renderer: THREE.WebGLRenderer, private mats: EnvMaterials, shadowSize: number) {
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+    scene.add(this.hemi);
+    this.sun.castShadow = true;
+    this.setShadowSize(shadowSize);
+    const cam = this.sun.shadow.camera;
+    cam.left = -SHADOW_BOX; cam.right = SHADOW_BOX; cam.top = SHADOW_BOX; cam.bottom = -SHADOW_BOX; cam.near = 1; cam.far = 60;
+    this.sun.shadow.bias = -0.0005;
+    this.sun.shadow.normalBias = 0.03;
+    scene.add(this.sun, this.sun.target);
+    this.backdrop = new THREE.Mesh(new THREE.PlaneGeometry(460, 78), this.backdropMat);
+    this.backdrop.renderOrder = -1;
+    this.backdrop.frustumCulled = false;
+    scene.add(this.backdrop);
   }
-  build(castShadow: boolean, receiveShadow: (m: THREE.Material) => boolean): THREE.Group {
-    const group = new THREE.Group();
-    for (const [mat, list] of this.parts) {
-      const merged = mergeGeometries(list, false)!;
-      list.forEach((g) => g.dispose());
-      const m = new THREE.Mesh(merged, mat);
-      m.castShadow = castShadow;
-      m.receiveShadow = receiveShadow(mat);
-      group.add(m);
-    }
-    return group;
+
+  setShadowSize(px: number): void {
+    this.sun.shadow.mapSize.set(px, px);
+    if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+  }
+
+  apply(t: Theme): void {
+    if (this.theme === t) return;
+    this.theme = t;
+    this.skyTex?.dispose();
+    this.envTex?.dispose();
+    this.skyTex = skyTexture(t);
+    this.scene.background = this.skyTex;
+    this.envTex = this.pmrem.fromEquirectangular(this.skyTex).texture;
+    this.scene.environment = this.envTex;
+    this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near, t.fog.far);
+    this.hemi.color.setHex(t.hemi.sky);
+    this.hemi.groundColor.setHex(t.hemi.ground);
+    this.hemi.intensity = t.hemi.intensity;
+    this.sun.color.setHex(t.sun.color);
+    this.sun.intensity = t.sun.intensity;
+    this.backdropMat.map?.dispose();
+    this.backdropMat.map = backdropTexture(t);
+    this.backdropMat.needsUpdate = true;
+    applyThemeToMaterials(this.mats, t);
+    clearVehicleCache();
+  }
+
+  /** Keeps the sun's shadow box centred just ahead of the runner (snapped to shadow texels so edges don't shimmer). */
+  follow(x: number, sceneZ: number): void {
+    const texel = (SHADOW_BOX * 2) / this.sun.shadow.mapSize.x;
+    const tx = Math.round(x / texel) * texel, tz = Math.round((sceneZ - 6) / texel) * texel;
+    this.sun.target.position.set(tx, 0, tz);
+    this.sun.position.set(tx + 6.1, 16.3, tz + 9.9);
+  }
+
+  /** The skyline plane stays far in front of the camera (behind it for the menu camera, which looks back along +z). */
+  placeBackdrop(camera: THREE.Camera, lookingBack: boolean): void {
+    const dir = lookingBack ? 1 : -1;
+    this.backdrop.position.set(camera.position.x * 0.9, 26, camera.position.z + dir * 175);
+    this.backdrop.rotation.y = lookingBack ? Math.PI : 0;
   }
 }
 
-/** Sky, image lighting for shiny materials, sun with shadows, soft fill light, fog. Returns the sun. */
-export function setupEnvironment(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.DirectionalLight {
-  const sky = skyTexture();
-  scene.background = sky;
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromEquirectangular(sky).texture;
-  pmrem.dispose();
-  scene.fog = new THREE.Fog(0xe9eef0, 45, 115);
-
-  scene.add(new THREE.HemisphereLight(0xdbeafe, 0x8a8170, 1.6));
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  const cam = sun.shadow.camera;
-  cam.left = -14; cam.right = 14; cam.top = 14; cam.bottom = -14; cam.near = 1; cam.far = 60;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.03;
-  scene.add(sun, sun.target);
-  return sun;
-}
-
-/** Keeps the sun's shadow box centred just ahead of the runner. Same light direction as the iOS version. */
-export function followSun(sun: THREE.DirectionalLight, x: number, sceneZ: number): void {
-  sun.target.position.set(x, 0, sceneZ - 6);
-  sun.position.set(x + 6.1, 16.3, sceneZ - 6 + 9.9);
-}
-
-/** One 18 m piece of track and city. Same k always gives the same piece (seeded by k, like iOS). */
-export function makeSegment(k: number, m: Materials): THREE.Group {
+/** One 18 m piece of track and city. Same k and theme always give the same piece (seeded by k, like iOS). */
+export function makeSegment(k: number, m: EnvMaterials, t: Theme): THREE.Group {
   const len = SEGMENT_LENGTH;
   const rng = new SplitMix64(BigInt.asUintN(64, BigInt(k)) + 1000n);
   const mg = new Merger();
+  const c: Ctx = { mg, m, t, rng };
+  const fogMix = (col: number, f: number) => mix(col, t.fog.color, f);
 
-  mg.add(boxGeo(8.6, 0.3, len), m.gravel, 0, -0.15, -len / 2, { uv: [4, 8] });
+  // ---- track: ballast, sleepers, rails
+  mg.add(BOX, m.gravel, 0, -0.15, -len / 2, { scale: [8.6, 0.3, len], uvScale: [4, 8], color: 0xffffff });
   for (let lane = 0; lane < 3; lane++) {
     const x = laneX(lane);
-    for (let z = 0.6; z < len; z += 1.2) mg.add(boxGeo(2.3, 0.1, 0.3), m.wood, x, 0.03, -z);
+    for (let z = 0.6; z < len; z += 1.2) box(c, m.vc, x, 0.05, -z, 2.3, 0.1, 0.3, 0x7b5230, { ao: 0.35, top: 0.1 });
     for (const side of [-0.72, 0.72]) {
-      mg.add(boxGeo(0.18, 0.06, len), m.railBase, x + side, 0.11, -len / 2);
-      mg.add(boxGeo(0.1, 0.1, len), m.rail, x + side, 0.19, -len / 2);
+      box(c, m.vc, x + side, 0.12, -len / 2, 0.2, 0.06, len, 0x4a4f5a);
+      box(c, m.vc, x + side, 0.2, -len / 2, 0.1, 0.1, len, 0xd4dbe4, { top: 0.3 });
     }
   }
+  box(c, m.vc, -LANE_EDGE, 0.02, -len / 2, 0.14, 0.02, len, 0xf4d03f); // painted lane edges on the ballast
+  box(c, m.vc, LANE_EDGE, 0.02, -len / 2, 0.14, 0.02, len, 0xf4d03f);
+
   for (const side of [-1, 1]) {
-    mg.add(boxGeo(1.4, 0.6, len), m.concrete, side * 5.0, 0.3, -len / 2);
-    mg.add(boxGeo(0.18, 0.02, len), m.curbStripe, side * 4.42, 0.61, -len / 2);
+    // ---- pavement, kerb stripe, and the wide verge that fills the view to the sides
+    box(c, m.vc, side * 5.0, 0.3, -len / 2, 1.4, 0.6, len, t.ground.path, { ao: 0.25, top: 0.12 });
+    box(c, m.vc, side * 4.42, 0.61, -len / 2, 0.18, 0.02, len, 0xfacc15);
+    box(c, m.vc, side * 25.7, 0.2, -len / 2, 40, 0.4, len, t.ground.side, { top: 0.1 });
+
     for (let lot = 0; lot < 2; lot++) {
       const zc = -(lot * 9 + 4.5);
-      if (rng.int(4) === 0) {
-        mg.add(boxGeo(7, 0.5, 9), m.grass, side * 9.2, 0.25, zc);
-        for (let t = 0; t < 2; t++) {
-          const tz = zc + (t === 0 ? -2.2 : 2.2);
-          mg.add(cylinderGeo(0.18, 1.6), m.trunk, side * 7.4, 1.3, tz);
-          mg.add(sphereGeo(1.25), m.leaf, side * 7.4, 2.9, tz);
-          mg.add(sphereGeo(0.9), m.leaf, side * 7.4 + 0.5, 3.7, tz + 0.3);
+      const parkOdds = t.prop === 'container' || t.prop === 'cactus' ? 3 : 4;
+      if (rng.int(parkOdds) === 0) {
+        const n = 2 + rng.int(2);
+        for (let i = 0; i < n; i++) {
+          const pz = zc + (i - (n - 1) / 2) * (7 / n) + (rng.int(10) - 5) / 10;
+          placeProp(c, t.prop, side * (7.2 + rng.int(40) / 10), pz, 0.9 + rng.int(40) / 100, rng);
         }
       } else {
-        const h = 6 + rng.int(9); // 6…14 m
-        const facade = m.facades[rng.int(m.facades.length)];
-        mg.add(boxGeo(7, h, 8.6), facade, side * 9.6, h / 2, zc, { uv: [1, h / 6] });
-        mg.add(boxGeo(7.4, 0.5, 9.0), m.roof, side * 9.6, h + 0.25, zc);
-        if (rng.int(2) === 0) mg.add(cylinderGeo(0.9, 1.6), m.roof, side * 10.5, h + 1.3, zc + 2);
+        building(c, side, zc, 6 + rng.int(9), t);
       }
+      placeShrub(c, side * (6.0 + rng.int(8) / 10), zc + (rng.int(60) - 30) / 10, rng);
+      if (rng.int(2) === 0) placeShrub(c, side * (6.3 + rng.int(8) / 10), zc + (rng.int(60) - 30) / 10, rng);
     }
-    if (k % 2 === 0) {
-      mg.add(cylinderGeo(0.08, 4.4), m.pole, side * 4.9, 2.2, -9);
-      mg.add(boxGeo(0.9, 0.08, 0.12), m.pole, side * 4.5, 4.4, -9);
-      mg.add(boxGeo(0.5, 0.12, 0.3), m.lamp, side * 4.15, 4.32, -9);
+    // ---- far skyline blocks: bigger, hazier buildings behind the lots
+    for (let lot = 0; lot < 2; lot++) {
+      if (rng.int(10) < 3) continue;
+      const h = 14 + rng.int(26), w = 7 + rng.int(5), x = side * (19 + rng.int(14));
+      const wall = fogMix(t.buildings[rng.int(t.buildings.length)], 0.28);
+      mg.add(BOX, m.facade, x, h / 2, -(lot * 9 + 4.5), { scale: [w, h, 8.4], color: wall, ao: 0.4, top: 0.15, uvScale: [w / 12, h / 12], uvOffset: [rng.int(8) / 8, 0] });
+      mg.add(BOX, m.vc, x, h + 0.2, -(lot * 9 + 4.5), { scale: [w + 0.4, 0.4, 8.8], color: fogMix(t.roof, 0.3) });
     }
+    // ---- street lamp
+    if (k % 2 === 0) lamp(c, side, -9);
   }
-  if (((k % 3) + 3) % 3 === 0) {
-    for (const side of [-1, 1]) mg.add(boxGeo(0.25, 7.5, 0.25), m.pole, side * 4.6, 3.75, -2);
-    mg.add(boxGeo(9.5, 0.2, 0.2), m.pole, 0, 7.5, -2);
-  }
-  const ground = new Set<THREE.Material>([m.gravel, m.wood, m.railBase, m.rail, m.concrete, m.curbStripe, m.grass]);
-  const g = mg.build(false, (mat) => ground.has(mat));
+  if (((k % 3) + 3) % 3 === 0) gantry(c);
+
+  const ground = new Set<THREE.Material>([m.gravel, m.vc, m.facade]);
+  const g = mg.build(() => false, (mat) => ground.has(mat));
   g.position.z = -k * len;
   return g;
 }
 
-export function makeObstacle(o: Obstacle, m: Materials): THREE.Group {
-  const mg = new Merger();
-  const extra: THREE.Mesh[] = [];
-  let zCenter = o.z + 0.25;
-  switch (o.kind) {
-    case 'hurdle':
-      for (const side of [-0.92, 0.92]) {
-        mg.add(boxGeo(0.09, 1.0, 0.09), m.darkMetal, side, 0.5, 0);
-        mg.add(boxGeo(0.14, 0.06, 0.5), m.darkMetal, side, 0.03, 0);
-        mg.add(sphereGeo(0.07), m.warning, side, 1.04, 0);
-      }
-      mg.add(boxGeo(2.0, 0.42, 0.08, 0.03), m.hurdleStripes, 0, 0.76, 0);
-      mg.add(boxGeo(2.0, 0.18, 0.06, 0.02), m.hurdleStripes, 0, 0.34, 0);
-      break;
-    case 'bar':
-      for (const side of [-1.12, 1.12]) mg.add(boxGeo(0.16, 2.3, 0.16), m.darkMetal, side, 1.15, 0);
-      mg.add(boxGeo(2.4, 0.95, 0.22, 0.05), m.barStripes, 0, 1.7, 0);
-      for (const lx of [-0.7, 0, 0.7]) mg.add(sphereGeo(0.09), m.warning, lx, 2.25, 0);
-      break;
-    case 'train': {
-      const L = obstacleLength(o);
-      zCenter = o.z + L / 2;
-      // Three's box face order: +x, -x, +y, -y, +z (front, toward the runner), -z
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.3, 3.0, L),
-        [m.trainSide, m.trainSide, m.trainRoof, m.trainBottom, m.trainFront, m.trainFront]);
-      body.position.y = 1.95;
-      body.castShadow = true;
-      extra.push(body);
-      mg.add(boxGeo(1.2, 0.25, 3.2, 0.08), m.trainRoof, 0, 3.55, 0);
-      if (o.len !== undefined) for (const rz of [-L / 4, L / 4]) mg.add(boxGeo(1.2, 0.25, 3.2, 0.08), m.trainRoof, 0, 3.55, rz);
-      for (const bz of [-(L / 2 - 1.8), L / 2 - 1.8]) {
-        mg.add(boxGeo(1.9, 0.35, 2.4), m.trainBottom, 0, 0.3, bz);
-        for (const wz of [-0.7, 0.7]) for (const wx of [-0.86, 0.86]) {
-          mg.add(cylinderGeo(0.27, 0.12), m.wheel, wx, 0.27, bz + wz, { rotZ: Math.PI / 2 });
-        }
-      }
-      for (const hx of [-0.72, 0.72]) mg.add(sphereGeo(0.13), m.headlight, hx, 1.05, L / 2 + 0.02);
-      break;
-    }
+const LANE_EDGE = 3.77; // outer edge of the side lanes
+
+function building(c: Ctx, side: number, zc: number, h: number, t: Theme): void {
+  const { mg, m, rng } = c;
+  const wall = t.buildings[rng.int(t.buildings.length)];
+  const w = 6 + rng.int(14) / 10, d = 8.3, cx = side * 9.6;
+  const tiers = h > 10 && rng.int(2) === 0 ? 2 : 1;
+  const h1 = tiers === 2 ? h * 0.65 : h;
+  const uvo: [number, number] = [rng.int(8) / 8, 0];
+  mg.add(BOX, m.facade, cx, h1 / 2, zc, { scale: [w, h1, d], color: wall, ao: 0.42, top: 0.12, uvScale: [w / 12, h1 / 12], uvOffset: uvo });
+  box(c, m.vc, cx, h1 + 0.2, zc, w + 0.5, 0.4, d + 0.5, mix(wall, 0x000000, 0.25), { top: 0.15 }); // cornice
+  let top = h1 + 0.4;
+  if (tiers === 2) {
+    const h2 = h - h1, w2 = w - 1.6;
+    mg.add(BOX, m.facade, cx + side * 0.4, top + h2 / 2, zc, { scale: [w2, h2, d - 1.4], color: mix(wall, 0xffffff, 0.12), ao: 0.4, uvScale: [w2 / 12, h2 / 12], uvOffset: uvo });
+    box(c, m.vc, cx + side * 0.4, top + h2 + 0.2, zc, w2 + 0.5, 0.4, d - 0.9, mix(wall, 0x000000, 0.25), { top: 0.15 });
+    top += h2 + 0.4;
   }
-  if (o.kind === 'ramp') {
-    // wedge: low end toward the runner (-z in the scene is forward, so the high end is at scene -RAMP_LENGTH)
-    const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(RAMP_LENGTH, 0), new THREE.Vector2(RAMP_LENGTH, ROOF_Y)]);
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.2, bevelEnabled: false });
-    const wedge = new THREE.Mesh(geo, m.hurdleStripes);
-    wedge.rotation.y = Math.PI / 2; // shape x → scene -z... then flip so the slope rises away from the camera
-    wedge.position.set(-1.1, 0, 0);
-    wedge.castShadow = true;
-    extra.push(wedge);
-    zCenter = o.z;
+  if (t.snow) box(c, m.vc, cx, top + 0.12, zc, w + 0.4, 0.26, d + 0.4, 0xffffff);
+  // shopfront at the street side: dark glass, glowing when it's dusk, with a striped awning
+  const fx = cx - side * (w / 2 + 0.06);
+  const neon = t.neon[rng.int(t.neon.length)];
+  box(c, m.vc, fx, 1.35, zc, 0.16, 2.1, d - 1.2, 0x2a3550, { ao: 0.2 });
+  if (t.windowGlow > 0.3) box(c, m.glow, fx - side * 0.09, 1.3, zc, 0.04, 1.4, d - 2.2, 0xffd9a0, { glow: 0.55 + t.windowGlow * 0.25 });
+  const nA = 4;
+  for (let i = 0; i < nA; i++) {
+    box(c, m.vc, fx - side * 0.5, 2.55, zc - (d - 1.2) / 2 + (i + 0.5) * (d - 1.2) / nA, 1.2, 0.18, (d - 1.2) / nA, i % 2 ? 0xffffff : neon, { top: 0.1 });
   }
-  const g = mg.build(true, () => false);
-  extra.forEach((e) => g.add(e));
-  g.position.set(laneX(o.lane), 0, -zCenter);
-  return g;
+  // corner pilasters
+  for (const dz of [-1, 1]) box(c, m.vc, fx, h1 / 2, zc + dz * (d / 2 - 0.1), 0.3, h1, 0.3, mix(wall, 0xffffff, 0.3));
+  // roof furniture
+  switch (rng.int(4)) {
+    case 0: // AC box + vent
+      box(c, m.vc, cx, top + 0.5, zc + 1.2, 1.6, 1.0, 1.4, 0xcfd6de, { ao: 0.3, top: 0.1 });
+      c.mg.add(CYL, m.vc, cx + 1.2, top + 0.4, zc - 1.2, { scale: [0.45, 0.8, 0.45], color: 0x9aa5b1, ao: 0.3 });
+      break;
+    case 1: // water tower
+      for (const [dx, dz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) c.mg.add(CYL, m.vc, cx + dx, top + 0.7, zc + dz, { scale: [0.05, 1.4, 0.05], color: 0x4a4f5a });
+      c.mg.add(CYL, m.vc, cx, top + 1.9, zc, { scale: [0.95, 1.2, 0.95], color: 0x9a6b3f, ao: 0.3, top: 0.1 });
+      c.mg.add(CONE, m.vc, cx, top + 2.8, zc, { scale: [1.05, 0.6, 1.05], color: 0x6f4a2a });
+      break;
+    case 2: // billboard / neon sign facing the track
+      box(c, m.vc, cx - side * 1.4, top + 0.9, zc, 0.15, 1.8, 0.15, 0x4a4f5a);
+      box(c, m.vc, cx - side * 1.4, top + 2.2, zc, 0.22, 1.6, 4.2, 0x2a2f3a);
+      box(c, m.glow, cx - side * 1.52, top + 2.2, zc, 0.06, 1.3, 3.9, neon, { glow: 1.2 + t.windowGlow });
+      break;
+    default: // antenna
+      c.mg.add(CYL, m.vc, cx, top + 1.6, zc, { scale: [0.06, 3.2, 0.06], color: 0x4a4f5a });
+      c.mg.add(ICO, m.glow, cx, top + 3.3, zc, { scale: [0.12, 0.12, 0.12], color: 0xff4040, glow: 2.4 });
+  }
+  // neon trim on night worlds
+  if (t.windowGlow > 0.8) box(c, m.glow, fx - side * 0.1, h1 * 0.55, zc, 0.06, 0.12, d - 0.6, neon, { glow: 1.8 });
 }
 
-/** Finish arch over all three lanes (posts, banner, checkered ground line). `z` is the finish distance. */
-export function makeFinishArch(z: number, m: Materials): THREE.Group {
-  const g = new THREE.Group();
+function lamp(c: Ctx, side: number, z: number): void {
+  const { m, t } = c;
+  c.mg.add(CYL, m.vc, side * 4.9, 2.2, z, { scale: [0.07, 4.4, 0.07], color: 0x3a4250, ao: 0.4 });
+  c.mg.add(CYL, m.vc, side * 4.9, 0.25, z, { scale: [0.22, 0.5, 0.22], color: 0x2a303b });
+  box(c, m.vc, side * 4.55, 4.42, z, 0.95, 0.07, 0.1, 0x3a4250);
+  box(c, m.vc, side * 4.12, 4.34, z, 0.5, 0.1, 0.28, 0x2a303b);
+  box(c, m.glow, side * 4.12, 4.27, z, 0.42, 0.05, 0.2, 0xfff1c4, { glow: 1.6 + t.windowGlow });
+}
+
+function gantry(c: Ctx): void {
+  const { m, t, rng } = c;
   for (const side of [-1, 1]) {
-    g.add(mesh(cylinderGeo(0.22, 6), m.finishPost, side * 4.3, 3, 0));
-    g.add(mesh(sphereGeo(0.4), m.finishBall, side * 4.3, 6.2, 0));
+    box(c, m.vc, side * 4.6, 3.75, -2, 0.25, 7.5, 0.25, 0x4a5262, { ao: 0.3 });
+    box(c, m.vc, side * 4.6, 0.15, -2, 0.7, 0.3, 0.7, 0x2a303b);
   }
-  // Three's box face order: +x, -x, +y, -y, +z (toward the runner), -z
-  const banner = new THREE.Mesh(boxGeo(9, 1.6, 0.2), [m.finishPost, m.finishPost, m.finishPost, m.finishPost, m.finishBanner, m.finishPost]);
+  box(c, m.vc, 0, 7.5, -2, 9.6, 0.3, 0.3, 0x4a5262, { top: 0.2 });
+  box(c, m.vc, 0, 6.5, -2, 9.0, 0.06, 0.06, 0x2a303b);
+  for (let lane = 0; lane < 3; lane++) { // signal heads, one per lane
+    const x = laneX(lane);
+    box(c, m.vc, x, 6.9, -2, 0.7, 1.3, 0.35, 0x232833);
+    box(c, m.glow, x, 7.2, -1.8, 0.28, 0.28, 0.06, rng.int(3) === 0 ? 0xff4040 : 0x40ff7a, { glow: 2.4 });
+    box(c, m.glow, x, 6.75, -1.8, 0.28, 0.28, 0.06, 0xffc83a, { glow: 0.5 });
+  }
+  void t;
+}
+
+/** Finish arch over all three lanes: striped posts, banner, bunting, checkered ground line. `z` is the finish distance. */
+export function makeFinishArch(z: number, m: EnvMaterials): THREE.Group {
+  const g = new THREE.Group();
+  const mg = new Merger();
+  const c = { mg, m } as unknown as Ctx;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 6; i++) box(c, m.vc, side * 4.3, 0.5 + i, 0, 0.5, 1.0, 0.5, i % 2 ? 0x111827 : 0xffffff, { ao: 0.2 });
+    mg.add(ICO, m.glow, side * 4.3, 6.4, 0, { scale: [0.45, 0.45, 0.45], color: 0xfde047, glow: 1.8 });
+  }
+  for (let i = 0; i < 9; i++) { // bunting flags
+    const x = -3.8 + i * 0.95;
+    mg.add(CONE, m.vc, x, 4.3 - Math.sin((i / 8) * Math.PI) * -0.0 - 0.0, 0.12, { scale: [0.3, 0.6, 0.3], rot: [Math.PI, 0, 0], color: [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899][i % 5] });
+  }
+  const parts = mg.build(() => true, () => false);
+  g.add(parts);
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 0.2), [m.vc, m.vc, m.vc, m.vc, m.finishBanner, m.vc]);
+  banner.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(banner.geometry.getAttribute('position').count * 3).fill(1), 3));
   banner.position.y = 5.4;
+  banner.castShadow = true;
   g.add(banner);
   const line = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 0.55), m.checker);
   line.rotation.x = -Math.PI / 2;
   line.position.y = 0.2;
   g.add(line);
-  g.traverse((o) => { o.castShadow = true; });
   g.position.z = -z;
   return g;
 }
 
-
-/** Frees a built group's geometry (materials are shared and stay). */
+/** Frees a built group's geometry (materials are shared and stay). Cached obstacle geometry is shared and stays too. */
 export function disposeGroup(g: THREE.Object3D): void {
-  g.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose(); });
+  g.traverse((o) => { if (o instanceof THREE.Mesh && !o.geometry.userData.shared) o.geometry.dispose(); });
 }

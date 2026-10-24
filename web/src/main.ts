@@ -17,6 +17,7 @@ const idle = params.get('idle') === '1';
 const fixedSeed = params.get('seed');
 const skip = Math.min(600, Math.max(0, Number(params.get('skip')) || 0));
 const levelFlag = Number(params.get('level'));
+const qualityFlag = (): 'low' | 'high' | undefined => { const q = params.get('quality'); return q === 'low' || q === 'high' ? q : undefined; };
 
 function safeStorage(): Pick<Storage, 'getItem' | 'setItem'> {
   try { return window.localStorage; } catch { return { getItem: () => null, setItem: () => {} }; }
@@ -129,7 +130,7 @@ const game = new Game($('gl'), {
     el.classList.add('show');
     audio.sfx(text.startsWith('Close') ? 'nearmiss' : text.startsWith('Combo') ? 'combo' : text.startsWith('Board') ? 'boardbreak' : 'lane');
   },
-});
+}, qualityFlag());
 
 const RING_ICONS: [keyof PowerHud, string][] = [['board', '🛹'], ['magnet', '🧲'], ['sneakers', '👟'], ['double', '×2'], ['fly', '🚀']];
 function renderPowers(p: PowerHud): void {
@@ -323,7 +324,7 @@ if (params.get('debug') === '1') {
   debugEl = document.createElement('div');
   debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000a;padding:4px 8px;z-index:9';
   document.body.appendChild(debugEl);
-  (window as unknown as { subwayRunnerDebug: () => unknown }).subwayRunnerDebug = () => ({ ...game.debugState(), screen, unlocked: progress.unlocked, totalStars: progress.totalStars });
+  (window as unknown as { subwayRunnerDebug: () => unknown }).subwayRunnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, unlocked: progress.unlocked, totalStars: progress.totalStars });
 }
 let fpsFrames = 0, fpsStart = performance.now();
 
@@ -333,7 +334,7 @@ function loop(now: number): void {
   if (debugEl) {
     fpsFrames++;
     if (now - fpsStart >= 1000) {
-      debugEl.textContent = `${fpsFrames} fps · ${game.drawCalls()} draws · ${game.renderer.getPixelRatio()}x`;
+      debugEl.textContent = `${fpsFrames} fps · ${game.drawCalls()} draws · ${Math.round(game.triangles() / 1000)}k tris · ${game.renderer.getPixelRatio()}x`;
       fpsFrames = 0;
       fpsStart = now;
     }

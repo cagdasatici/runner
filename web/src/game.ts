@@ -12,7 +12,13 @@ import { PowerVisuals } from './gfx/powerups';
 import { ParticlePool } from './gfx/effects';
 import { GoldenStarRenderer } from './gfx/goldStars';
 import { createMaterials, type Materials } from './gfx/materials';
-import { disposeGroup, followSun, makeFinishArch, makeObstacle, makeSegment, SEGMENT_LENGTH, setupEnvironment } from './gfx/world';
+import { createEnvMaterials, type EnvMaterials } from './gfx/envMaterials';
+import { confettiTexture, sparkleTexture } from './gfx/envTextures';
+import { PostFx } from './gfx/post';
+import { ENDLESS_THEME, MENU_THEME, themeForWorld, type Theme } from './gfx/themes';
+import { disposeGroup, Environment, makeFinishArch, makeObstacle, makeSegment, SEGMENT_LENGTH } from './gfx/world';
+
+export type Quality = 'low' | 'high';
 
 const VIEW_AHEAD = 115;
 const CELEBRATE_SECONDS = 1.2; // the runner jogs on past the finish line before the results card
@@ -74,7 +80,16 @@ export class Game {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(66, 1, 0.1, 160);
   private mats: Materials;
-  private sun: THREE.DirectionalLight;
+  private envMats: EnvMaterials;
+  private env: Environment;
+  private post: PostFx;
+  private theme: Theme = MENU_THEME;
+  quality: Quality = 'high';
+  private qualityLocked = false;
+  private lean = 0;
+  private camX = 0;
+  private sparkles = new ParticlePool(120, true, sparkleTexture());
+  private confetti = new ParticlePool(260, false, confettiTexture());
   private figure: RunnerFigure;
   private coins: CoinRenderer;
   private power = new PowerVisuals();
@@ -113,18 +128,24 @@ export class Game {
   private slowFrames = 0;
   private frames = 0;
 
-  constructor(canvas: HTMLCanvasElement, private events: GameEvents) {
+  constructor(canvas: HTMLCanvasElement, private events: GameEvents, forced?: Quality) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer.info.autoReset = false; // post passes add up: reset once per frame
+    if (forced) { this.quality = forced; this.qualityLocked = true; }
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? 1.5 : 1.25);
     this.renderer.setPixelRatio(this.pixelRatio);
     this.mats = createMaterials();
-    this.sun = setupEnvironment(this.scene, this.renderer);
+    this.envMats = createEnvMaterials();
+    this.env = new Environment(this.scene, this.renderer, this.envMats, this.quality === 'high' ? 1024 : 512);
+    this.post = new PostFx(this.renderer);
+    this.post.enabled = this.quality === 'high';
+    this.applyTheme(MENU_THEME);
     this.figure = new RunnerFigure(this.mats);
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points, this.sparkles.points, this.confetti.points);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -137,6 +158,15 @@ export class Game {
     const px = h * this.renderer.getPixelRatio();
     this.dust.setScale(px);
     this.glow.setScale(px);
+    this.sparkles.setScale(px);
+    this.confetti.setScale(px);
+    this.post.resize();
+  }
+
+  private applyTheme(t: Theme): void {
+    this.theme = t;
+    this.env.apply(t);
+    this.post.setTheme(t);
   }
 
   /** Swipes and keys queue moves; one is applied per tick (like the iOS NSLock queue). */
@@ -158,8 +188,9 @@ export class Game {
     this.play = null;
     this.clearDynamic();
     this.clearSegments();
+    this.applyTheme(MENU_THEME);
     for (let k = -7; k <= 1; k++) this.addSegment(k); // the menu camera looks back along +z
-    followSun(this.sun, 0, 0);
+    this.env.follow(0, 0);
   }
 
   /** Endless run. `skipSeconds` fast-forwards the simulation before the first frame (screenshots/tests; 0 in normal play). */
@@ -192,9 +223,10 @@ export class Game {
     this.clearDynamic();
     this.clearSegments();
     const level = play.level;
+    this.applyTheme(level ? themeForWorld(level.level.spec.world) : ENDLESS_THEME);
     this.stars.set(level ? level.level.stars : []);
     if (level) {
-      this.finishArch = makeFinishArch(level.level.finishZ, this.mats);
+      this.finishArch = makeFinishArch(level.level.finishZ, this.envMats);
       this.scene.add(this.finishArch);
     }
     for (let i = 0; i < skipSeconds / Runner.dt && !play.over; i++) play.tick(this.nextMove());
@@ -238,7 +270,11 @@ export class Game {
     }
     this.dust.update(dt);
     this.glow.update(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.sparkles.update(dt);
+    this.confetti.update(dt);
+    this.env.placeBackdrop(this.camera, this.mode === 'menu');
+    this.renderer.info.reset();
+    this.post.render(this.scene, this.camera);
     this.adaptQuality(dt);
   }
 
@@ -246,6 +282,7 @@ export class Game {
   resetClock(): void { this.last = null; }
 
   drawCalls(): number { return this.renderer.info.render.calls; }
+  triangles(): number { return this.renderer.info.render.triangles; }
 
   /** Read-only snapshot for automated checks (exposed only with ?debug=1). */
   debugState(): { mode: string; lane: number; tick: number; score: number; crashed: boolean; level: number; finished: boolean; stars: number } {
@@ -286,6 +323,7 @@ export class Game {
         if (this.finishT < 0) {
           this.finishT = 0;
           this.glow.burst(s.x, 2.5, -level.level.finishZ, 120, { color: 0xfde047, speed: 6, life: 0.9, size: 0.3, gravity: 4, colorJitter: 0.8 });
+          this.confetti.burst(0, 6, -level.level.finishZ, 220, { color: 0xffffff, palette: [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xffffff], speed: 7, life: 1.8, size: 0.34, gravity: 5, dir: [0, 0.7, 0.3], spread: 1.2 });
         }
         const before = this.finishT;
         this.finishT += dt;
@@ -333,7 +371,7 @@ export class Game {
     for (const o of track.obstacles) {
       if (o.z >= s.z + VIEW_AHEAD || o.z + obstacleLength(o) < s.z - 10) continue;
       live.add(o.id);
-      if (!this.obstacleNodes.has(o.id)) { const g = makeObstacle(o, this.mats); this.obstacleNodes.set(o.id, g); this.scene.add(g); }
+      if (!this.obstacleNodes.has(o.id)) { const g = makeObstacle(o, this.envMats, this.theme); this.obstacleNodes.set(o.id, g); this.scene.add(g); }
     }
     for (const [id, g] of this.obstacleNodes) if (!live.has(id)) { this.scene.remove(g); disposeGroup(g); this.obstacleNodes.delete(id); }
 
@@ -349,6 +387,7 @@ export class Game {
           }
           this.coins.pop(c);
           this.glow.burst(laneX(c.lane), coinY(c), -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
+          this.sparkles.burst(laneX(c.lane), coinY(c), -c.z, 6, { color: 0xffffff, speed: 2.5, life: 0.5, size: 0.34 });
         }
       } else visible.push(c);
     }
@@ -370,12 +409,15 @@ export class Game {
       sy = -sx * 0.6;
     }
     this.camera.position.set(s.x * 0.6 + sx, 4.0 + this.camY + sy, -s.z + 7.2);
-    this.camera.rotation.set(-0.2, 0, 0);
-    followSun(this.sun, s.x, -s.z);
+    this.lean += ((s.x - this.camX) * -0.35 - this.lean) * Math.min(1, this.frameDt * 10);
+    this.lean = Math.max(-0.05, Math.min(0.05, this.lean));
+    this.camX = s.x;
+    this.camera.rotation.set(-0.2, 0, this.lean);
+    this.env.follow(s.x, -s.z);
   }
 
   private addSegment(k: number): void {
-    const g = makeSegment(k, this.mats);
+    const g = makeSegment(k, this.envMats, this.theme);
     this.segments.set(k, g);
     this.scene.add(g);
   }
@@ -396,19 +438,31 @@ export class Game {
     this.glow.clear();
   }
 
-  /** If frames are slow (iPad struggling), render fewer pixels. Never goes below 1×. */
+  /** If frames are slow (iPad struggling): first drop bloom/grading and shadow resolution, then render fewer pixels. */
   private adaptQuality(dt: number): void {
-    if (dt <= 0) return;
+    if (dt <= 0 || this.qualityLocked) return;
     this.frames++;
     if (dt > 1 / 45) this.slowFrames++;
     if (this.frames >= 120) {
-      if (this.slowFrames > 30 && this.pixelRatio > 1) {
-        this.pixelRatio = Math.max(1, this.pixelRatio - 0.25);
-        this.renderer.setPixelRatio(this.pixelRatio);
-        this.resize();
+      if (this.slowFrames > 30) {
+        if (this.quality === 'high') this.setQuality('low');
+        else if (this.pixelRatio > 1) {
+          this.pixelRatio = Math.max(1, this.pixelRatio - 0.25);
+          this.renderer.setPixelRatio(this.pixelRatio);
+          this.resize();
+        }
       }
       this.frames = 0;
       this.slowFrames = 0;
     }
+  }
+
+  setQuality(q: Quality): void {
+    this.quality = q;
+    this.post.enabled = q === 'high';
+    this.env.setShadowSize(q === 'high' ? 1024 : 512);
+    this.pixelRatio = Math.min(this.pixelRatio, q === 'high' ? 1.5 : 1.25);
+    this.renderer.setPixelRatio(this.pixelRatio);
+    this.resize();
   }
 }
