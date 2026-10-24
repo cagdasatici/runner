@@ -57,6 +57,7 @@ export class RunnerFigure {
   private action: THREE.AnimationAction | null = null;
   private stumbleT = 0;
   private lastStumbles = 0;
+  private lastSlide = 0;
   private pop = 1; // 0 → 1 scale-in after switching character
   private pitch = 0;
   private squash = 1;
@@ -113,6 +114,8 @@ export class RunnerFigure {
       // scale to the target height and stand the feet on y = 0 (measured on the bind pose)
       const wrap = new THREE.Group();
       wrap.add(model);
+      wrap.updateMatrixWorld(true);
+      model.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.update(); });
       const box = new THREE.Box3().setFromObject(model, true);
       const k = def.height / Math.max(0.01, box.max.y - box.min.y);
       wrap.scale.setScalar(k);
@@ -169,6 +172,8 @@ export class RunnerFigure {
     const board = (s.board ?? 0) > 0 && key !== 'crash' && (s.fly ?? 0) <= 0 && ((s as { descend?: number }).descend ?? 0) <= 0;
     this.rig.position.set(s.x, s.y + (board ? BOARD_LIFT : 0), -s.z);
     this.rig.rotation.z = Math.max(-0.35, Math.min(0.35, -(laneX(s.lane) - s.x) * 0.18));
+    if (key === 'slide' && s.slideTicks > this.lastSlide && this.key === 'slide') this.key = null; // a new roll restarts the clip
+    this.lastSlide = s.slideTicks;
     this.play(e, key, s, speed);
     e.mixer.update(dt);
 
@@ -197,7 +202,7 @@ export class RunnerFigure {
     const e = this.current;
     if (!e) { this.pose(s, dt); return; }
     this.rig.position.set(0, 0, 0);
-    this.rig.rotation.set(0, Math.sin(time * 0.8) * 0.45, 0);
+    this.rig.rotation.set(0, Math.sin(time * 0.8) * 0.45, 0); // the model faces -z, i.e. the menu camera
     this.pivot.position.y = 0;
     this.key = null;
     const idle = e.actions.get(e.def.clips.idle ?? '');

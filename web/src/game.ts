@@ -74,7 +74,7 @@ function levelPlay(n: number, opts: StartOptions): Play {
 function forcePose(s: RunnerState, pose: string): RunnerState {
   const v = { ...s };
   switch (pose) {
-    case 'slide': v.slideTicks = 30; break;
+    case 'slide': v.slideTicks = 72 - Math.floor((performance.now() / 8.33) % 72); break; // repeating roll
     case 'jump': v.y = 0.9; v.vy = 2; break;
     case 'crash': v.crashed = true; break;
     case 'fly': v.fly = 500; v.y = 5.5; break;
@@ -141,7 +141,6 @@ export class Game {
     this.figure.pivot.add(this.power.jetpack.group);
     this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
     this.figure.preloadAll();
-    (window as unknown as Record<string, unknown>).__fig = this.figure; // TEMP
     this.coins = new CoinRenderer(this.mats);
     this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
     this.resize();
@@ -240,10 +239,10 @@ export class Game {
     if (this.mode === 'menu') {
       this.figure.menuPose(this.time, dt);
       const a = 0.35 * Math.sin(this.time * 0.3);
-      this.camera.position.set(5.2 * Math.sin(a), 2.3, -6.4 * Math.cos(a));
-      this.camera.fov = 66;
+      this.camera.position.set(4.4 * Math.sin(a), 1.7, -6.0 * Math.cos(a));
+      this.camera.fov = 52;
       this.camera.updateProjectionMatrix();
-      this.camera.lookAt(0, 1.35, 0);
+      this.camera.lookAt(0, 0.7, 0);
     } else if (this.play) {
       const play = this.play;
       if (!play.over) {

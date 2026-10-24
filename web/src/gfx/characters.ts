@@ -23,22 +23,22 @@ export interface CharacterDef {
 }
 
 const animal = (id: string, name: string, height: number, extra: Partial<CharacterDef> = {}): CharacterDef => ({
-  id, name, model: `models/${id}.glb`, height, slide: 'tuck', yaw: 0, runSpeed: 1.15,
+  id, name, model: `models/${id}.glb`, height, slide: 'tuck', yaw: Math.PI, runSpeed: 1.15,
   clips: { run: 'Gallop', jump: 'Gallop_Jump', crash: 'Death', idle: 'Idle', stumble: 'Idle_HitReact_Left', fly: 'Gallop_Jump', board: 'Idle' },
   ...extra,
 });
 
 export const CHARACTERS: readonly CharacterDef[] = [
   {
-    id: 'adventurer', name: 'Alex', model: 'models/adventurer.glb', height: 1.7, slide: 'clip', yaw: 0, runSpeed: 1.0,
+    id: 'adventurer', name: 'Alex', model: 'models/adventurer.glb', height: 1.7, slide: 'clip', yaw: Math.PI, runSpeed: 1.0,
     clips: { run: 'Run', jump: 'Run', slide: 'Roll', crash: 'Death', idle: 'Idle', stumble: 'HitRecieve', fly: 'Run', board: 'Idle' },
   },
-  animal('shiba', 'Biscuit', 1.15),
-  animal('cat', 'Whiskers', 0.95, {
+  animal('shiba', 'Biscuit', 1.35),
+  animal('cat', 'Whiskers', 1.15, {
     runSpeed: 1.0,
     clips: { run: 'Run', jump: 'Jump_Loop', crash: 'Death', idle: 'Idle', fly: 'Jump_Loop', board: 'Idle' },
   }),
-  animal('fox', 'Rusty', 1.2),
+  animal('fox', 'Rusty', 1.4),
 ];
 
 export const DEFAULT_CHARACTER = CHARACTERS[0].id;

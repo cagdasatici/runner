@@ -154,28 +154,28 @@ export class BoardVisual {
   private t = 0;
 
   constructor() {
-    const deckGeo = new THREE.ExtrudeGeometry(stadium(1.55, 0.58), { depth: 0.07, bevelEnabled: true, bevelSize: 0.035, bevelThickness: 0.03, bevelSegments: 3, curveSegments: 12 });
+    const deckGeo = new THREE.ExtrudeGeometry(stadium(1.7, 0.5), { depth: 0.07, bevelEnabled: true, bevelSize: 0.035, bevelThickness: 0.03, bevelSegments: 3, curveSegments: 12 });
     deckGeo.rotateX(Math.PI / 2); // shape plane -> XZ, extrusion goes down
     deckGeo.translate(0, 0.14, 0);
     const deck = new THREE.Mesh(deckGeo, new THREE.MeshStandardMaterial({ color: 0x22d3ee, metalness: 0.35, roughness: 0.28, emissive: 0x0e7490, emissiveIntensity: 0.5 }));
     deck.castShadow = true;
     // dark grip pad where the feet are
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.015, 0.8), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 }));
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.012, 0.5), new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.9 }));
     pad.position.set(0, 0.176, 0.05);
     // glowing side rails and nose light
     const railMat = additive(0xa5f3fc);
-    for (const x of [-0.27, 0.27]) {
+    for (const x of [-0.25, 0.25]) {
       const rail = new THREE.Mesh(new THREE.CapsuleGeometry(0.018, 0.9, 3, 6), railMat);
       rail.rotation.x = Math.PI / 2;
-      rail.position.set(x, 0.168, 0.1);
+      rail.position.set(x * 0.85, 0.168, 0.1);
       this.body.add(rail);
     }
     const nose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), additive(0xffffff));
-    nose.position.set(0, 0.15, -0.74);
+    nose.position.set(0, 0.15, -0.82);
     // twin thruster rings at the tail
     for (const x of [-0.14, 0.14]) {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.025, 8, 16), additive(0xf0abfc));
-      ring.position.set(x, 0.1, 0.8);
+      ring.position.set(x, 0.1, 0.88);
       this.rings.push(ring);
       this.body.add(ring);
     }
