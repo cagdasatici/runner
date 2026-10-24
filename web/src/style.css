@@ -158,3 +158,15 @@ svg { width: 1em; height: 1em; fill: currentColor; }
 .rb.green { background: linear-gradient(#4ade80, #16a34a); --base: #14532d; }
 .rb.orange { background: linear-gradient(#fb923c, #ea580c); --base: #9a3412; }
 .rb.blue { background: linear-gradient(#38bdf8, #0284c7); --base: #075985; }
+
+/* power-ups */
+.chunky.teal { background: linear-gradient(#2dd4bf, #0d9488); box-shadow: 0 5px 0 #115e59, 0 8px 14px rgba(0, 0, 0, 0.3); color: #fff; }
+.powers { position: absolute; left: 12px; top: 130px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 5; }
+.ring { --p: 100; width: 54px; height: 54px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 900; color: #fff;
+  background: radial-gradient(circle, rgba(30, 27, 75, 0.85) 58%, transparent 60%), conic-gradient(#fde047 calc(var(--p) * 1%), rgba(255, 255, 255, 0.25) 0); filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4)); }
+.ring.low { animation: ringpulse 0.5s ease-in-out infinite; }
+@keyframes ringpulse { 50% { transform: scale(1.15); } }
+.landing { position: absolute; left: 50%; top: 32%; transform: translateX(-50%); padding: 10px 26px; border-radius: 26px; background: rgba(239, 68, 68, 0.9); color: #fff; font-size: 34px; font-weight: 900; letter-spacing: 1px; border: 3px solid #fff; z-index: 6; pointer-events: none; animation: ringpulse 0.5s ease-in-out infinite; }
+.toast { position: absolute; left: 50%; top: 24%; transform: translate(-50%, 0); font-size: 36px; font-weight: 900; color: #fde047; text-shadow: 0 3px 0 #7c2d12, 0 0 14px rgba(0, 0, 0, 0.5); opacity: 0; pointer-events: none; z-index: 6; white-space: nowrap; }
+.toast.show { animation: toastup 1s ease-out; }
+@keyframes toastup { 0% { opacity: 0; transform: translate(-50%, 20px) scale(0.6); } 15% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -40px) scale(1); } }

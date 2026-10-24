@@ -4,7 +4,7 @@ import {
   barSeconds, beatSeconds, coinMidi, layerRamp, levelFor, nextBpm, Sequencer, smoothSpeed, targetBpm,
   BOOST_SPEED_BONUS, type BarDecision, type Layer, type NoteEvent,
 } from './music';
-import type { Theme } from './themes';
+import { WORLD_THEMES, type Theme } from './themes';
 import { degreeToMidi, makeRng, midiToFreq } from './theory';
 
 export const LOOKAHEAD = 0.14;        // seconds scheduled ahead of currentTime
@@ -29,7 +29,7 @@ export class MusicEngine {
   private echoIn: GainNode;
   private delay: DelayNode;
   private noiseBuf: AudioBuffer;
-  private satCurve: Float32Array;
+  private satCurve: Float32Array<ArrayBuffer>;
   private voices = 0;
   private session: Session | null = null;
   private seq: Sequencer | null = null;
@@ -96,7 +96,7 @@ export class MusicEngine {
     this.noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0), r = makeRng(4242);
     for (let i = 0; i < n; i++) d[i] = r.next() * 2 - 1;
-    this.satCurve = new Float32Array(257);
+    this.satCurve = new Float32Array(new ArrayBuffer(257 * 4));
     for (let i = 0; i < 257; i++) this.satCurve[i] = Math.tanh(((i / 128) - 1) * 2.2);
   }
 
@@ -457,7 +457,7 @@ export class MusicEngine {
   }
 
   private key(): Theme {
-    return this.theme ?? this.lastTheme ?? { rootPc: 0, scale: [0, 2, 4, 5, 7, 9, 11] } as Theme;
+    return this.theme ?? this.lastTheme ?? WORLD_THEMES[0];
   }
   private deg(d: number, base = 72): number { const k = this.key(); return degreeToMidi(k.scale, base - 12 + k.rootPc, d); }
 
@@ -502,7 +502,7 @@ export class MusicEngine {
     switch (name) {
       case 'coin': {
         if (t - this.lastCoinTime > 1) this.streak = 0;
-        const f = midiToFreq(coinMidi(this.key() as Theme, this.streak));
+        const f = midiToFreq(coinMidi(this.key(), this.streak));
         this.streak++; this.lastCoinTime = t;
         this.blip({ t, f, type: 'triangle', dur: 0.2, peak: 0.16, lp: 5000, bus: b, wet: 0.25, prio: 3 });
         this.blip({ t, f: f * 2, type: 'sine', dur: 0.14, peak: 0.07, bus: b, wet: 0.25, prio: 3 });

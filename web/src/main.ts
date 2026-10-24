@@ -6,7 +6,7 @@ import { Audio } from './audio';
 import { LEVEL_COUNT, levelSpec, type LevelRun } from './core/level';
 import { ProgressStore } from './core/progress';
 import { ScoreStore } from './core/scoreStore';
-import { Game } from './game';
+import { Game, type PowerHud } from './game';
 import type { Move } from './core/runner';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
 
@@ -39,6 +39,17 @@ function newSeed(): bigint {
 
 const levelName = (n: number) => { const s = levelSpec(n); return `${s.world}-${s.inWorld}`; };
 
+// Power-up state -> music/SFX: opens the top music layer, jetpack loop, landing ticks, pickup arpeggio.
+let prevPow = { any: false, fly: false, landing: 0 };
+function audioPower(p: { board: number; magnet: number; sneakers: number; double: number; fly: number; landing: number }): void {
+  const fly = p.fly > 0, any = fly || p.board > 0 || p.magnet > 0 || p.sneakers > 0 || p.double > 0;
+  if (any && !prevPow.any) audio.sfx('powerup');
+  audio.setPowerUp(any);
+  if (fly !== prevPow.fly) audio.sfx(fly ? 'jetpack' : 'jetpackStop');
+  if (p.landing !== prevPow.landing && p.landing > 0) audio.sfx('warn', p.landing);
+  prevPow = { any, fly, landing: p.landing };
+}
+
 const game = new Game($('gl'), {
   onScore: (score, coins) => { $('score').textContent = String(score); $('coins').textContent = String(coins); },
   onSpeed: (v) => audio.setSpeed(v),
@@ -65,10 +76,46 @@ const game = new Game($('gl'), {
     later(350, () => show('over'));
   },
   onFinish: (run) => showResults(run),
+  onPower: (p) => { renderPowers(p); audioPower(p); },
+  onToast: (text) => {
+    const el = $('toast');
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('show');
+    audio.sfx(text.startsWith('Close') ? 'nearmiss' : text.startsWith('Combo') ? 'combo' : text.startsWith('Board') ? 'boardbreak' : 'lane');
+  },
 });
+
+const RING_ICONS: [keyof PowerHud, string][] = [['board', '🛹'], ['magnet', '🧲'], ['sneakers', '👟'], ['double', '×2'], ['fly', '🚀']];
+function renderPowers(p: PowerHud): void {
+  $('powers').innerHTML = RING_ICONS.filter(([k]) => (p[k] as number) > 0)
+    .map(([k, icon]) => `<div class="ring${(p[k] as number) < 0.2 ? ' low' : ''}" style="--p:${Math.round((p[k] as number) * 100)}">${icon}</div>`).join('');
+  const land = $('landing');
+  land.classList.toggle('hidden', p.landing === 0);
+  land.textContent = p.landing > 0 ? `LANDING ${p.landing}` : '';
+}
+
+// "Start with a board" (chosen before a run, free): remembered on this device
+const BOARD_KEY = 'start.board';
+let startBoard = true;
+try { startBoard = localStorage.getItem(BOARD_KEY) !== '0'; } catch { /* blocked storage: keep the default */ }
+function paintBoardToggle(): void {
+  const b = $('board-toggle');
+  b.textContent = `🛹 Start with a board: ${startBoard ? 'ON' : 'OFF'}`;
+  b.setAttribute('aria-pressed', String(startBoard));
+}
+paintBoardToggle();
+$('board-toggle').addEventListener('click', () => {
+  startBoard = !startBoard;
+  try { localStorage.setItem(BOARD_KEY, startBoard ? '1' : '0'); } catch { /* ignore */ }
+  paintBoardToggle();
+});
+const runOptions = () => ({ board: startBoard, friendly: true });
 
 function show(s: typeof screen): void {
   screen = s;
+  if (s === 'menu' || s === 'map') { $('powers').innerHTML = ''; $('landing').classList.add('hidden'); }
   $('menu').classList.toggle('hidden', s !== 'menu');
   $('map').classList.toggle('hidden', s !== 'map');
   $('hud').classList.toggle('hidden', s !== 'hud' && s !== 'over' && s !== 'results');
@@ -110,13 +157,15 @@ function resetHud(level: boolean): void {
   $('star-slots').querySelectorAll('span').forEach((s) => { s.classList.remove('got'); s.innerHTML = STAR_SVG; });
   $('progress-fill').style.width = '0%';
   $('progress-me').style.left = '0%';
+  $('powers').innerHTML = '';
+  $('landing').classList.add('hidden');
 }
 
 function playEndless(): void {
   cancelTimers();
   current = 0;
   resetHud(false);
-  game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0);
+  game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
   audio.playMusic({ mode: 'endless' });
 }
@@ -126,7 +175,7 @@ function playLevel(n: number): void {
   current = n;
   resetHud(true);
   $('level-chip').textContent = levelName(n);
-  game.startLevel(n, autoplay, idle, autoplay ? skip : 0);
+  game.startLevel(n, autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
   audio.playMusic({ mode: 'run', world: levelSpec(n).world });
 }
