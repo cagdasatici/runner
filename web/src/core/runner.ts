@@ -35,6 +35,13 @@ export const Runner = {
   coinReach: 0.9,
 } as const;
 
+/**
+ * Hold-to-speed-up. While the player holds SPACE / a still finger, forward speed is multiplied by `factor`
+ * (tunable). Only the forward speed changes: the tick-based acceleration curve, jump/slide timers and lane
+ * switching stay the same, and collisions use the real boosted distance per tick. Ratings ignore boost.
+ */
+export const Boost = { factor: 1.6 } as const;
+
 /** How fast a run goes: start speed, gain per second, top speed (m/s). Endless mode uses ENDLESS_PACE. */
 export interface Pace {
   start: number;
@@ -80,7 +87,7 @@ export function obstacleBox(kind: ObstacleKind): { halfW: number; y0: number; y1
 // overlap(a0, a1, b0, b1) = a0 < b1 && a1 > b0 (strict)
 const overlap = (a0: number, a1: number, b0: number, b1: number): boolean => a0 < b1 && a1 > b0;
 
-export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE): RunnerState {
+export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE, boost = false): RunnerState {
   if (prev.crashed) return prev;
   const s = cloneState(prev);
   switch (move) {
@@ -114,7 +121,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     }
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speedAtTick(s.tick, pace) * Runner.dt;
+  s.z += speedAtTick(s.tick, pace) * (boost ? Boost.factor : 1) * Runner.dt;
   s.tick += 1;
 
   const h = height(s);
@@ -151,8 +158,8 @@ export class RunSession {
     this.track.generate(RunSession.generateAhead);
   }
 
-  tick(move: Move): void {
-    this.state = step(this.state, move, this.track);
+  tick(move: Move, boost = false): void {
+    this.state = step(this.state, move, this.track, ENDLESS_PACE, boost);
     this.track.generate(this.state.z + RunSession.generateAhead);
     this.track.dropBehind(this.state.z);
   }
