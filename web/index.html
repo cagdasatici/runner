@@ -30,7 +30,12 @@
         <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.6l-6 3.3 1.3-6.7-5-4.7 6.8-.8z"/></svg><span><b id="total-stars">0</b> / 360</span></div>
         <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M7 3h10v3h3v2a5 5 0 0 1-4.3 4.95A5 5 0 0 1 13 15.9V18h3v3H8v-3h3v-2.1A5 5 0 0 1 8.3 12.95 5 5 0 0 1 4 8V6h3V3zm0 5H6a3 3 0 0 0 1 2.2V8zm10 0v2.2A3 3 0 0 0 18 8h-1z"/></svg><span>Best <b id="best">0</b></span></div>
       </div>
-      <div class="grow"></div>
+      <div id="swipe" class="grow" aria-hidden="true"></div>
+      <div class="picker">
+        <button id="prev-char" class="arrow" aria-label="Previous character"><svg viewBox="0 0 24 24"><path d="M15.5 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="who"><b id="char-name">Alex</b><div id="char-dots" class="dots"></div></div>
+        <button id="next-char" class="arrow" aria-label="Next character"><svg viewBox="0 0 24 24"><path d="M8.5 4l8 8-8 8" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
       <button id="play" class="chunky green big"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>PLAY</button>
       <button id="endless" class="chunky blue small">Endless run</button>
       <button id="board-toggle" class="chunky teal small" aria-pressed="true">🛹 Start with a board: ON</button>
