@@ -258,9 +258,9 @@ export class LevelRun {
 
   get over(): boolean { return this.finished || this.state.crashed; }
 
-  tick(move: Move): void {
+  tick(move: Move, boost = false): void {
     if (this.over) return;
-    this.state = step(this.state, move, this.level.track, this.level.spec.pace);
+    this.state = step(this.state, move, this.level.track, this.level.spec.pace, boost);
     if (this.state.crashed) return;
     for (const g of this.level.stars) if (!this.starsTaken.has(g.id) && canReach(this.state, g.lane, g.z)) this.starsTaken.add(g.id);
     if (this.state.z >= this.level.finishZ) this.finished = true;

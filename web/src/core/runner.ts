@@ -83,6 +83,12 @@ export const Power = {
   comboPoints: 50,
   comboGapTicks: 120, // 1 s
 } as const;
+/**
+ * Hold-to-speed-up. While the player holds SPACE / a still finger, forward speed is multiplied by `factor`
+ * (tunable). Only the forward speed changes: the tick-based acceleration curve, jump/slide timers and lane
+ * switching stay the same, and collisions use the real boosted distance per tick. Ratings ignore boost.
+ */
+export const Boost = { factor: 1.6 } as const;
 
 /** How fast a run goes: start speed, gain per second, top speed (m/s). Endless mode uses ENDLESS_PACE. */
 export interface Pace {
@@ -170,7 +176,7 @@ export function resolvePickup(kind: PickupKind, id: number): Exclude<PickupKind,
   return all[id % all.length];
 }
 
-export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE): RunnerState {
+export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE, boost = false): RunnerState {
   if (prev.crashed) return prev;
   const s: RunnerState = { ...prev }; // `collected` is shared with prev until something is picked up (copy on write)
   const own = () => { if (s.collected === prev.collected) s.collected = new Set(prev.collected); };
@@ -224,7 +230,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     s.y += s.vy * Runner.dt;
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speed * Runner.dt;
+  s.z += speed * (boost ? Boost.factor : 1) * Runner.dt;
   s.tick += 1;
   // land on, or ride up, whatever is under the feet now
   s.floor = floorAt(s.x, s.z, track);
@@ -315,8 +321,8 @@ export class RunSession {
     this.track.generate(RunSession.generateAhead);
   }
 
-  tick(move: Move): void {
-    this.state = step(this.state, move, this.track);
+  tick(move: Move, boost = false): void {
+    this.state = step(this.state, move, this.track, ENDLESS_PACE, boost);
     this.track.generate(this.state.z + RunSession.generateAhead);
     this.track.dropBehind(this.state.z);
   }

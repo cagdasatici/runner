@@ -24,6 +24,8 @@ export interface GameEvents {
   onCoin(): void;
   onStar(taken: number): void;
   onProgress(fraction: number): void;
+  onBoost?(on: boolean): void;
+  onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
   onPower(p: PowerHud): void;
   onToast(text: string): void;
@@ -38,7 +40,7 @@ interface Play {
   track: Track;
   pace: Pace;
   level: LevelRun | null;
-  tick(move: Move): void;
+  tick(move: Move, boost?: boolean): void;
   readonly over: boolean;
 }
 
@@ -49,7 +51,7 @@ function endlessPlay(seed: bigint, opts: StartOptions): Play {
     get track() { return s.track; },
     pace: ENDLESS_PACE,
     level: null,
-    tick: (m) => s.tick(m),
+    tick: (m, b) => s.tick(m, b),
     get over() { return s.state.crashed; },
   };
 }
@@ -61,7 +63,7 @@ function levelPlay(n: number, opts: StartOptions): Play {
     track: r.level.track,
     pace: r.level.spec.pace,
     level: r,
-    tick: (m) => r.tick(m),
+    tick: (m, b) => r.tick(m, b),
     get over() { return r.over; },
   };
 }
@@ -89,6 +91,8 @@ export class Game {
   private solver = new Solver(true);
   private idle = false;
   private pending: Move[] = [];
+  private boost = false; // held: SPACE or a still finger
+  private boostFov = 0; // 0…1 eased FOV widening
   private last: number | null = null;
   private acc = 0;
   private time = 0;
@@ -139,7 +143,16 @@ export class Game {
     if (this.mode === 'playing' && !this.autoplay) this.pending.push(move);
   }
 
+  /** Hold-to-speed-up (see Boost in core/runner.ts). Only has an effect while a run is in progress. */
+  setBoost(on: boolean): void {
+    if (on && (this.mode !== 'playing' || this.autoplay)) return;
+    if (this.boost === on) return;
+    this.boost = on;
+    this.events.onBoost?.(on);
+  }
+
   showMenu(): void {
+    this.setBoost(false);
     this.mode = 'menu';
     this.play = null;
     this.clearDynamic();
@@ -165,6 +178,7 @@ export class Game {
     this.play = play;
     this.solver.reset();
     this.pending = [];
+    this.setBoost(false);
     this.acc = 0;
     this.shake = 0;
     this.crashHandled = false;
@@ -211,8 +225,8 @@ export class Game {
         while (this.acc >= Runner.dt && ticks < 8) {
           this.acc -= Runner.dt;
           ticks++;
-          play.tick(this.nextMove());
-          if (play.over) break;
+          play.tick(this.nextMove(), this.boost);
+          if (play.over) { this.setBoost(false); break; }
         }
         if (ticks === 8) this.acc = 0;
       } else if (play.level?.finished && this.finishT < CELEBRATE_SECONDS) {
@@ -328,6 +342,10 @@ export class Game {
       if (s.collected.has(c.id)) {
         if (!this.popped.has(c.id)) {
           this.popped.add(c.id);
+          if (this.events.onCoinFly) {
+            const v = new THREE.Vector3(laneX(c.lane), coinY(c), -c.z).project(this.camera);
+            this.events.onCoinFly((v.x * 0.5 + 0.5) * window.innerWidth, (-v.y * 0.5 + 0.5) * window.innerHeight);
+          }
           this.coins.pop(c);
           this.glow.burst(laneX(c.lane), coinY(c), -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
         }
@@ -338,7 +356,8 @@ export class Game {
 
     this.power.update(s, track.pickups, this.time, VIEW_AHEAD);
     this.figure.pose(s);
-    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
+    this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + 12 * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
     this.camY += (s.floor * 0.7 - this.camY) * Math.min(1, this.frameDt * 5); // glide up with the roof
     let sx = 0, sy = 0;
