@@ -191,3 +191,15 @@ body.boosting #boost-tag { opacity: 1; transform: translateX(-50%) scale(1); }
   -webkit-mask-image: radial-gradient(ellipse at 50% 46%, transparent 38%, #000 82%); mask-image: radial-gradient(ellipse at 50% 46%, transparent 38%, #000 82%); }
 body.boosting #speedlines { opacity: 1; animation: lines 0.18s linear infinite; }
 @keyframes lines { 50% { transform: scale(1.04); } }
+
+/* ---------- character select (menu) ---------- */
+#swipe { align-self: stretch; pointer-events: auto; touch-action: none; }
+.picker { display: flex; align-items: center; gap: 18px; }
+.picker .arrow { width: 68px; height: 68px; border-radius: 50%; border: 3px solid rgba(255,255,255,.85); color: #fff; font-size: 34px;
+  background: linear-gradient(#38bdf8, #0284c7); box-shadow: 0 6px 0 #075985; display: grid; place-items: center; padding: 0; }
+.picker .arrow:active { transform: translateY(5px); box-shadow: 0 1px 0 #075985; }
+.who { min-width: 190px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.who b { font-size: 40px; font-weight: 900; color: #fff; -webkit-text-stroke: 6px var(--ink); paint-order: stroke fill; letter-spacing: .5px; }
+.dots { display: flex; gap: 10px; }
+.dots i { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.45); border: 2px solid var(--ink); transition: transform .15s, background .15s; }
+.dots i.on { background: #fde047; transform: scale(1.35); }

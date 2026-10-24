@@ -166,7 +166,7 @@ export class RunnerFigure {
     const key = s.crashed ? 'crash' : animFor(s, this.stumbleT > 0);
     this.t += dt;
 
-    const board = (s.board ?? 0) > 0 && key !== 'crash';
+    const board = (s.board ?? 0) > 0 && key !== 'crash' && (s.fly ?? 0) <= 0 && ((s as { descend?: number }).descend ?? 0) <= 0;
     this.rig.position.set(s.x, s.y + (board ? BOARD_LIFT : 0), -s.z);
     this.rig.rotation.z = Math.max(-0.35, Math.min(0.35, -(laneX(s.lane) - s.x) * 0.18));
     this.play(e, key, s, speed);

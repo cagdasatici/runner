@@ -7,6 +7,7 @@ import { LEVEL_COUNT, levelSpec, type LevelRun } from './core/level';
 import { ProgressStore } from './core/progress';
 import { ScoreStore } from './core/scoreStore';
 import { Game, type PowerHud } from './game';
+import { CHARACTERS, characterById, saveCharacter, stepCharacter } from './gfx/characters';
 import type { Move } from './core/runner';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
 
@@ -240,6 +241,39 @@ function showResults(run: LevelRun): void {
   count();
   $('r-best').classList.toggle('hidden', !newBest || stars < 2);
   $('r-next').classList.toggle('hidden', n >= LEVEL_COUNT);
+}
+
+// --- character select: arrows, swipe on the 3D preview; the choice is remembered (localStorage 'character') ---
+const dots = $('char-dots');
+dots.innerHTML = CHARACTERS.map(() => '<i></i>').join('');
+function showCharacter(): void {
+  const id = game.character;
+  $('char-name').textContent = characterById(id).name;
+  dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('on', CHARACTERS[i].id === id));
+}
+function stepChar(step: number): void {
+  const id = stepCharacter(game.character, step);
+  game.setCharacter(id);
+  saveCharacter(id);
+  showCharacter();
+  audio.sfx('coin');
+}
+const charFlag = params.get('char');
+if (charFlag && CHARACTERS.some((c) => c.id === charFlag)) game.setCharacter(charFlag);
+const poseFlag = params.get('pose');
+if (poseFlag) game.debugPose = poseFlag;
+showCharacter();
+$('prev-char').addEventListener('click', (e) => { e.stopPropagation(); audio.unlock(); stepChar(-1); });
+$('next-char').addEventListener('click', (e) => { e.stopPropagation(); audio.unlock(); stepChar(1); });
+{
+  let sx: number | null = null;
+  const swipe = $('swipe');
+  swipe.addEventListener('pointerdown', (e) => { sx = e.clientX; });
+  swipe.addEventListener('pointerup', (e) => {
+    if (sx !== null && Math.abs(e.clientX - sx) > 40) { audio.unlock(); stepChar(e.clientX < sx ? 1 : -1); }
+    sx = null;
+  });
+  swipe.addEventListener('pointercancel', () => { sx = null; });
 }
 
 // --- buttons ---

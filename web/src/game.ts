@@ -7,6 +7,7 @@ import { LevelRun } from './core/level';
 import { ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
 import { coinY, laneX, obstacleLength, type Coin, type Track } from './core/track';
 import { RunnerFigure } from './gfx/character';
+import { characterById, loadCharacter } from './gfx/characters';
 import { CoinRenderer } from './gfx/coins';
 import { PowerVisuals } from './gfx/powerups';
 import { ParticlePool } from './gfx/effects';
@@ -68,6 +69,20 @@ function levelPlay(n: number, opts: StartOptions): Play {
   };
 }
 
+/** Copy of the state with a forced pose (debug screenshots only). */
+function forcePose(s: RunnerState, pose: string): RunnerState {
+  const v = { ...s };
+  switch (pose) {
+    case 'slide': v.slideTicks = 30; break;
+    case 'jump': v.y = 0.9; v.vy = 2; break;
+    case 'crash': v.crashed = true; break;
+    case 'fly': v.fly = 500; v.y = 5.5; break;
+    case 'board': v.board = 3000; break;
+    case 'stumble': v.stumbles += 1; break;
+  }
+  return v;
+}
+
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -121,7 +136,11 @@ export class Game {
     this.renderer.setPixelRatio(this.pixelRatio);
     this.mats = createMaterials();
     this.sun = setupEnvironment(this.scene, this.renderer);
-    this.figure = new RunnerFigure(this.mats);
+    this.figure = new RunnerFigure(this.mats, loadCharacter());
+    this.figure.pivot.add(this.power.jetpack.group);
+    this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
+    this.figure.preloadAll();
+    (window as unknown as Record<string, unknown>).__fig = this.figure; // TEMP
     this.coins = new CoinRenderer(this.mats);
     this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
     this.resize();
@@ -151,6 +170,12 @@ export class Game {
     this.events.onBoost?.(on);
   }
 
+  /** Debug/test only (?pose=slide|jump|crash|fly|board|stumble): forces the runner's pose while playing. */
+  debugPose: string | null = null;
+
+  get character(): string { return this.figure.characterId; }
+  setCharacter(id: string): void { this.figure.setCharacter(id); }
+
   showMenu(): void {
     this.setBoost(false);
     this.mode = 'menu';
@@ -177,6 +202,7 @@ export class Game {
     this.idle = idle;
     this.play = play;
     this.solver.reset();
+    this.figure.reset();
     this.pending = [];
     this.setBoost(false);
     this.acc = 0;
@@ -211,7 +237,7 @@ export class Game {
     this.frameDt = dt;
 
     if (this.mode === 'menu') {
-      this.figure.menuPose(this.time);
+      this.figure.menuPose(this.time, dt);
       const a = 0.35 * Math.sin(this.time * 0.3);
       this.camera.position.set(5.2 * Math.sin(a), 2.3, -6.4 * Math.cos(a));
       this.camera.fov = 66;
@@ -354,8 +380,9 @@ export class Game {
     this.coins.update(visible, this.time, this.frameDt);
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
-    this.power.update(s, track.pickups, this.time, VIEW_AHEAD);
-    this.figure.pose(s);
+    const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
+    this.power.update(vs, track.pickups, this.time, VIEW_AHEAD, this.frameDt, this.glow);
+    this.figure.pose(vs, this.frameDt, speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + 12 * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
