@@ -2,12 +2,13 @@
 // A run is either endless (RunSession) or a journey level (LevelRun, finite with a finish line and golden stars).
 // Fixed-step loop: one tick per Runner.dt, at most 8 ticks per frame (extra time dropped).
 import * as THREE from 'three';
-import { autopilotMove, collectorMove } from './core/autopilot';
+import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
-import { ENDLESS_PACE, isGrounded, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState } from './core/runner';
-import { COIN_Y, laneX, type Coin, type Track } from './core/track';
+import { ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
+import { coinY, laneX, obstacleLength, type Coin, type Track } from './core/track';
 import { RunnerFigure } from './gfx/character';
 import { CoinRenderer } from './gfx/coins';
+import { PowerVisuals } from './gfx/powerups';
 import { ParticlePool } from './gfx/effects';
 import { GoldenStarRenderer } from './gfx/goldStars';
 import { createMaterials, type Materials } from './gfx/materials';
@@ -23,8 +24,15 @@ export interface GameEvents {
   onCoin(): void;
   onStar(taken: number): void;
   onProgress(fraction: number): void;
+  onBoost?(on: boolean): void;
+  onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
+  onPower(p: PowerHud): void;
+  onToast(text: string): void;
 }
+
+/** What the HUD needs to draw the power-up rings (fractions 0…1 of the time left) and the landing warning. */
+export interface PowerHud { board: number; magnet: number; sneakers: number; double: number; fly: number; landing: number; chaser: boolean }
 
 /** What the loop needs from either kind of run. */
 interface Play {
@@ -32,30 +40,30 @@ interface Play {
   track: Track;
   pace: Pace;
   level: LevelRun | null;
-  tick(move: Move): void;
+  tick(move: Move, boost?: boolean): void;
   readonly over: boolean;
 }
 
-function endlessPlay(seed: bigint): Play {
-  const s = new RunSession(seed);
+function endlessPlay(seed: bigint, opts: StartOptions): Play {
+  const s = new RunSession(seed, opts);
   return {
     get state() { return s.state; },
     get track() { return s.track; },
     pace: ENDLESS_PACE,
     level: null,
-    tick: (m) => s.tick(m),
+    tick: (m, b) => s.tick(m, b),
     get over() { return s.state.crashed; },
   };
 }
 
-function levelPlay(n: number): Play {
-  const r = new LevelRun(n);
+function levelPlay(n: number, opts: StartOptions): Play {
+  const r = new LevelRun(n, opts);
   return {
     get state() { return r.state; },
     track: r.level.track,
     pace: r.level.spec.pace,
     level: r,
-    tick: (m) => r.tick(m),
+    tick: (m, b) => r.tick(m, b),
     get over() { return r.over; },
   };
 }
@@ -68,6 +76,9 @@ export class Game {
   private sun: THREE.DirectionalLight;
   private figure: RunnerFigure;
   private coins: CoinRenderer;
+  private power = new PowerVisuals();
+  private lastHud = '';
+  private lastCounters = [0, 0, 0, 0];
   private stars = new GoldenStarRenderer();
   private finishArch: THREE.Group | null = null;
   private dust = new ParticlePool(160, false);
@@ -77,12 +88,16 @@ export class Game {
   private play: Play | null = null;
   private mode: 'menu' | 'playing' = 'menu';
   private autoplay = false;
+  private solver = new Solver(true);
   private idle = false;
   private pending: Move[] = [];
+  private boost = false; // held: SPACE or a still finger
+  private boostFov = 0; // 0…1 eased FOV widening
   private last: number | null = null;
   private acc = 0;
   private time = 0;
   private shake = 0;
+  private camY = 0;
   private crashHandled = false;
   private finishT = -1; // seconds since the finish line (-1 = not finished)
   private lastScore = -1;
@@ -108,7 +123,7 @@ export class Game {
     this.sun = setupEnvironment(this.scene, this.renderer);
     this.figure = new RunnerFigure(this.mats);
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -128,7 +143,16 @@ export class Game {
     if (this.mode === 'playing' && !this.autoplay) this.pending.push(move);
   }
 
+  /** Hold-to-speed-up (see Boost in core/runner.ts). Only has an effect while a run is in progress. */
+  setBoost(on: boolean): void {
+    if (on && (this.mode !== 'playing' || this.autoplay)) return;
+    if (this.boost === on) return;
+    this.boost = on;
+    this.events.onBoost?.(on);
+  }
+
   showMenu(): void {
+    this.setBoost(false);
     this.mode = 'menu';
     this.play = null;
     this.clearDynamic();
@@ -138,13 +162,13 @@ export class Game {
   }
 
   /** Endless run. `skipSeconds` fast-forwards the simulation before the first frame (screenshots/tests; 0 in normal play). */
-  startRun(seed: bigint, autoplay: boolean, idle: boolean, skipSeconds = 0): void {
-    this.begin(endlessPlay(seed), autoplay, idle, skipSeconds);
+  startRun(seed: bigint, autoplay: boolean, idle: boolean, skipSeconds = 0, opts: StartOptions = {}): void {
+    this.begin(endlessPlay(seed, opts), autoplay, idle, skipSeconds);
   }
 
   /** Journey level n (1…120). */
-  startLevel(n: number, autoplay: boolean, idle: boolean, skipSeconds = 0): void {
-    this.begin(levelPlay(n), autoplay, idle, skipSeconds);
+  startLevel(n: number, autoplay: boolean, idle: boolean, skipSeconds = 0, opts: StartOptions = {}): void {
+    this.begin(levelPlay(n, opts), autoplay, idle, skipSeconds);
   }
 
   private begin(play: Play, autoplay: boolean, idle: boolean, skipSeconds: number): void {
@@ -152,7 +176,9 @@ export class Game {
     this.autoplay = autoplay;
     this.idle = idle;
     this.play = play;
+    this.solver.reset();
     this.pending = [];
+    this.setBoost(false);
     this.acc = 0;
     this.shake = 0;
     this.crashHandled = false;
@@ -160,6 +186,8 @@ export class Game {
     this.lastScore = this.lastCoins = this.lastProgress = -1;
     this.lastStars = 0;
     this.lastJumpTick = -100;
+    this.lastHud = '';
+    this.lastCounters = [0, 0, 0, 0];
     this.clearDynamic();
     this.clearSegments();
     const level = play.level;
@@ -197,8 +225,8 @@ export class Game {
         while (this.acc >= Runner.dt && ticks < 8) {
           this.acc -= Runner.dt;
           ticks++;
-          play.tick(this.nextMove());
-          if (play.over) break;
+          play.tick(this.nextMove(), this.boost);
+          if (play.over) { this.setBoost(false); break; }
         }
         if (ticks === 8) this.acc = 0;
       } else if (play.level?.finished && this.finishT < CELEBRATE_SECONDS) {
@@ -229,7 +257,7 @@ export class Game {
     const p = this.play!;
     if (this.autoplay) {
       if (this.idle) return 'none';
-      return p.level ? collectorMove(p.state, p.track, p.pace, p.level.level.stars, p.level.starsTaken) : autopilotMove(p.state, p.track);
+      return p.level ? this.solver.next(p.state, p.track, p.pace, p.level.level.stars, p.level.starsTaken) : autopilotMove(p.state, p.track);
     }
     return this.pending.shift() ?? 'none';
   }
@@ -263,6 +291,19 @@ export class Game {
         if (before < CELEBRATE_SECONDS && this.finishT >= CELEBRATE_SECONDS) this.events.onFinish(level);
       }
     }
+    const hud: PowerHud = {
+      board: s.board / Power.boardTicks, magnet: s.magnet / Power.magnetTicks, sneakers: s.sneakers / Power.sneakersTicks,
+      double: s.double / Power.doubleTicks, fly: s.fly / Power.flyTicks, chaser: s.chaser > 0,
+      landing: s.fly > 0 && s.fly <= Power.flyWarnTicks ? Math.ceil(s.fly / 120) : s.descend > 0 ? 1 : 0,
+    };
+    const key = [hud.board, hud.magnet, hud.sneakers, hud.double, hud.fly].map((v) => Math.round(v * 60)).join(',') + `${hud.landing}${hud.chaser}`;
+    if (key !== this.lastHud) { this.lastHud = key; this.events.onPower(hud); }
+    const [nm, cb, bb, sb] = this.lastCounters;
+    if (s.nearMisses !== nm) this.events.onToast('Close! +25');
+    else if (s.combos !== cb) this.events.onToast('Combo! +50');
+    else if (s.boardBreaks !== bb) { this.events.onToast('Board saved you!'); this.glow.burst(s.x, s.y + 0.5, -s.z, 70, { color: 0x5eead4, speed: 5, life: 0.6, size: 0.28, gravity: 4, colorJitter: 0.5 }); this.shake = 0.2; }
+    else if (s.stumbles !== sb) { this.events.onToast('Oof! Keep going!'); this.shake = 0.25; }
+    this.lastCounters = [s.nearMisses, s.combos, s.boardBreaks, s.stumbles];
     if (s.crashed && !this.crashHandled) {
       this.crashHandled = true;
       this.shake = 0.28;
@@ -274,7 +315,7 @@ export class Game {
       this.dustTimer += dt * 45;
       while (this.dustTimer >= 1) {
         this.dustTimer -= 1;
-        this.dust.burst(s.x, 0.05, -s.z + 0.25, 1, { color: 0xd6cfc4, speed: 1.4, life: 0.45, size: 0.25, dir: [0, 0.7, 0.7], spread: 0.5 });
+        this.dust.burst(s.x, s.y + 0.05, -s.z + 0.25, 1, { color: 0xd6cfc4, speed: 1.4, life: 0.45, size: 0.25, dir: [0, 0.7, 0.7], spread: 0.5 });
       }
     }
   }
@@ -289,7 +330,7 @@ export class Game {
 
     const live = new Set<number>();
     for (const o of track.obstacles) {
-      if (o.z >= s.z + VIEW_AHEAD || o.z + 12 < s.z - 10) continue;
+      if (o.z >= s.z + VIEW_AHEAD || o.z + obstacleLength(o) < s.z - 10) continue;
       live.add(o.id);
       if (!this.obstacleNodes.has(o.id)) { const g = makeObstacle(o, this.mats); this.obstacleNodes.set(o.id, g); this.scene.add(g); }
     }
@@ -301,17 +342,24 @@ export class Game {
       if (s.collected.has(c.id)) {
         if (!this.popped.has(c.id)) {
           this.popped.add(c.id);
+          if (this.events.onCoinFly) {
+            const v = new THREE.Vector3(laneX(c.lane), coinY(c), -c.z).project(this.camera);
+            this.events.onCoinFly((v.x * 0.5 + 0.5) * window.innerWidth, (-v.y * 0.5 + 0.5) * window.innerHeight);
+          }
           this.coins.pop(c);
-          this.glow.burst(laneX(c.lane), COIN_Y, -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
+          this.glow.burst(laneX(c.lane), coinY(c), -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
         }
       } else visible.push(c);
     }
     this.coins.update(visible, this.time, this.frameDt);
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
+    this.power.update(s, track.pickups, this.time, VIEW_AHEAD);
     this.figure.pose(s);
-    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
+    this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + 12 * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
+    this.camY += (s.floor * 0.7 - this.camY) * Math.min(1, this.frameDt * 5); // glide up with the roof
     let sx = 0, sy = 0;
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - this.frameDt);
@@ -319,7 +367,7 @@ export class Game {
       sx = Math.sin(this.time * 90) * 0.22 * k;
       sy = -sx * 0.6;
     }
-    this.camera.position.set(s.x * 0.6 + sx, 4.0 + sy, -s.z + 7.2);
+    this.camera.position.set(s.x * 0.6 + sx, 4.0 + this.camY + sy, -s.z + 7.2);
     this.camera.rotation.set(-0.2, 0, 0);
     followSun(this.sun, s.x, -s.z);
   }
@@ -338,6 +386,7 @@ export class Game {
     this.obstacleNodes.clear();
     if (this.finishArch) { this.scene.remove(this.finishArch); disposeGroup(this.finishArch); this.finishArch = null; }
     this.stars.set([]);
+    this.power.clear();
     this.popped.clear();
     this.coins.clearPops();
     this.coins.update([], 0, 0);

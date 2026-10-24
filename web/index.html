@@ -17,6 +17,8 @@
   <body>
     <canvas id="gl"></canvas>
     <div id="vignette"></div>
+    <div id="speedlines"></div>
+    <div id="boost-tag">BOOST</div>
 
     <section id="menu" class="screen">
       <button id="mute" class="round" aria-label="Sound on or off">
@@ -31,6 +33,7 @@
       <div class="grow"></div>
       <button id="play" class="chunky green big"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>PLAY</button>
       <button id="endless" class="chunky blue small">Endless run</button>
+      <button id="board-toggle" class="chunky teal small" aria-pressed="true">🛹 Start with a board: ON</button>
       <div class="hints">
         <div><svg viewBox="0 0 24 24"><path d="M3 12l5-5v3h8V7l5 5-5 5v-3H8v3z"/></svg>Lanes</div>
         <div><svg viewBox="0 0 24 24"><path d="M12 3l6 7h-4v10h-4V10H6z"/></svg>Jump</div>
@@ -59,6 +62,10 @@
         <div class="pill gold"><i class="coin"></i><b id="coins">0</b></div>
       </div>
     </section>
+
+    <div id="powers" class="powers"></div>
+    <div id="landing" class="landing hidden"></div>
+    <div id="toast" class="toast"></div>
 
     <section id="over" class="screen hidden">
       <div class="card">

@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SplitMix64 } from '../core/rng';
-import { laneX, TRAIN_LENGTH, type Obstacle } from '../core/track';
+import { laneX, obstacleLength, RAMP_LENGTH, ROOF_Y, type Obstacle } from '../core/track';
 import type { Materials } from './materials';
 import { boxGeo, cylinderGeo, mesh, sphereGeo } from './shapes';
 import { skyTexture } from './textures';
@@ -141,7 +141,7 @@ export function makeObstacle(o: Obstacle, m: Materials): THREE.Group {
       for (const lx of [-0.7, 0, 0.7]) mg.add(sphereGeo(0.09), m.warning, lx, 2.25, 0);
       break;
     case 'train': {
-      const L = TRAIN_LENGTH;
+      const L = obstacleLength(o);
       zCenter = o.z + L / 2;
       // Three's box face order: +x, -x, +y, -y, +z (front, toward the runner), -z
       const body = new THREE.Mesh(new THREE.BoxGeometry(2.3, 3.0, L),
@@ -150,7 +150,8 @@ export function makeObstacle(o: Obstacle, m: Materials): THREE.Group {
       body.castShadow = true;
       extra.push(body);
       mg.add(boxGeo(1.2, 0.25, 3.2, 0.08), m.trainRoof, 0, 3.55, 0);
-      for (const bz of [-3.2, 3.2]) {
+      if (o.len !== undefined) for (const rz of [-L / 4, L / 4]) mg.add(boxGeo(1.2, 0.25, 3.2, 0.08), m.trainRoof, 0, 3.55, rz);
+      for (const bz of [-(L / 2 - 1.8), L / 2 - 1.8]) {
         mg.add(boxGeo(1.9, 0.35, 2.4), m.trainBottom, 0, 0.3, bz);
         for (const wz of [-0.7, 0.7]) for (const wx of [-0.86, 0.86]) {
           mg.add(cylinderGeo(0.27, 0.12), m.wheel, wx, 0.27, bz + wz, { rotZ: Math.PI / 2 });
@@ -159,6 +160,17 @@ export function makeObstacle(o: Obstacle, m: Materials): THREE.Group {
       for (const hx of [-0.72, 0.72]) mg.add(sphereGeo(0.13), m.headlight, hx, 1.05, L / 2 + 0.02);
       break;
     }
+  }
+  if (o.kind === 'ramp') {
+    // wedge: low end toward the runner (-z in the scene is forward, so the high end is at scene -RAMP_LENGTH)
+    const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(RAMP_LENGTH, 0), new THREE.Vector2(RAMP_LENGTH, ROOF_Y)]);
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: 2.2, bevelEnabled: false });
+    const wedge = new THREE.Mesh(geo, m.hurdleStripes);
+    wedge.rotation.y = Math.PI / 2; // shape x → scene -z... then flip so the slope rises away from the camera
+    wedge.position.set(-1.1, 0, 0);
+    wedge.castShadow = true;
+    extra.push(wedge);
+    zCenter = o.z;
   }
   const g = mg.build(true, () => false);
   extra.forEach((e) => g.add(e));

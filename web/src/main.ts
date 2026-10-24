@@ -6,7 +6,7 @@ import { Audio } from './audio';
 import { LEVEL_COUNT, levelSpec, type LevelRun } from './core/level';
 import { ProgressStore } from './core/progress';
 import { ScoreStore } from './core/scoreStore';
-import { Game } from './game';
+import { Game, type PowerHud } from './game';
 import type { Move } from './core/runner';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
 
@@ -39,7 +39,51 @@ function newSeed(): bigint {
 
 const levelName = (n: number) => { const s = levelSpec(n); return `${s.world}-${s.inWorld}`; };
 
+/** Counts a number up in `el` (ease-out) after `delay` ms. Cancelled by a newer count on the same element. */
+const countTokens = new WeakMap<HTMLElement, number>();
+function countUp(el: HTMLElement, to: number, delay = 250, dur = 900): void {
+  const token = (countTokens.get(el) ?? 0) + 1;
+  countTokens.set(el, token);
+  el.textContent = '0';
+  const t0 = performance.now() + delay;
+  const tickFn = () => {
+    if (countTokens.get(el) !== token) return;
+    const k = Math.min(1, Math.max(0, (performance.now() - t0) / dur));
+    el.textContent = String(Math.round(to * (1 - (1 - k) * (1 - k))));
+    el.classList.toggle('counting', k < 1);
+    if (k < 1) requestAnimationFrame(tickFn);
+  };
+  tickFn();
+}
+
+/** A gold sprite flies from where the coin was collected to the HUD counter (~0.4 s), then the counter pops. */
+let flying = 0;
+function flyCoin(px: number, py: number): void {
+  const target = document.querySelector('#hud .pill.gold .coin') as HTMLElement | null;
+  if (!target || flying >= 10) return;
+  const r = target.getBoundingClientRect();
+  const el = document.createElement('i');
+  el.className = 'coin fly';
+  el.style.left = `${px - 14}px`;
+  el.style.top = `${py - 14}px`;
+  document.body.appendChild(el);
+  flying++;
+  const done = () => {
+    el.remove(); flying--;
+    const pill = target.parentElement!;
+    pill.classList.remove('bump'); void pill.offsetWidth; pill.classList.add('bump');
+  };
+  if (!el.animate) { done(); return; }
+  const a = el.animate([
+    { transform: 'translate(0,0) scale(1.1)', opacity: 1 },
+    { transform: `translate(${r.left + r.width / 2 - px}px, ${r.top + r.height / 2 - py}px) scale(0.7)`, opacity: 0.9 },
+  ], { duration: 400, easing: 'cubic-bezier(.5,0,.9,.6)' });
+  a.onfinish = done;
+}
+
 const game = new Game($('gl'), {
+  onBoost: (on) => { document.body.classList.toggle('boosting', on); },
+  onCoinFly: flyCoin,
   onScore: (score, coins) => { $('score').textContent = String(score); $('coins').textContent = String(coins); },
   onJump: () => audio.sfx('jump'),
   onCoin: () => audio.sfx('coin'),
@@ -57,18 +101,54 @@ const game = new Game($('gl'), {
     audio.sfx('crash');
     navigator.vibrate?.(60);
     $('over-title').textContent = current ? 'Oops!' : 'Crash!';
-    $('over-score').textContent = String(score);
-    $('over-coins').textContent = String(coins);
+    countUp($('over-score'), score, 450, 900);
+    countUp($('over-coins'), coins, 450, 700);
     $('newbest').classList.toggle('hidden', !newBest);
     $('again').textContent = current ? 'Try Again' : 'Play Again';
     $('home').textContent = current ? 'Map' : 'Menu';
     later(350, () => show('over'));
   },
   onFinish: (run) => showResults(run),
+  onPower: (p) => renderPowers(p),
+  onToast: (text) => {
+    const el = $('toast');
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('show');
+    audio.sfx('star');
+  },
 });
+
+const RING_ICONS: [keyof PowerHud, string][] = [['board', '🛹'], ['magnet', '🧲'], ['sneakers', '👟'], ['double', '×2'], ['fly', '🚀']];
+function renderPowers(p: PowerHud): void {
+  $('powers').innerHTML = RING_ICONS.filter(([k]) => (p[k] as number) > 0)
+    .map(([k, icon]) => `<div class="ring${(p[k] as number) < 0.2 ? ' low' : ''}" style="--p:${Math.round((p[k] as number) * 100)}">${icon}</div>`).join('');
+  const land = $('landing');
+  land.classList.toggle('hidden', p.landing === 0);
+  land.textContent = p.landing > 0 ? `LANDING ${p.landing}` : '';
+}
+
+// "Start with a board" (chosen before a run, free): remembered on this device
+const BOARD_KEY = 'start.board';
+let startBoard = true;
+try { startBoard = localStorage.getItem(BOARD_KEY) !== '0'; } catch { /* blocked storage: keep the default */ }
+function paintBoardToggle(): void {
+  const b = $('board-toggle');
+  b.textContent = `🛹 Start with a board: ${startBoard ? 'ON' : 'OFF'}`;
+  b.setAttribute('aria-pressed', String(startBoard));
+}
+paintBoardToggle();
+$('board-toggle').addEventListener('click', () => {
+  startBoard = !startBoard;
+  try { localStorage.setItem(BOARD_KEY, startBoard ? '1' : '0'); } catch { /* ignore */ }
+  paintBoardToggle();
+});
+const runOptions = () => ({ board: startBoard, friendly: true });
 
 function show(s: typeof screen): void {
   screen = s;
+  if (s === 'menu' || s === 'map') { $('powers').innerHTML = ''; $('landing').classList.add('hidden'); }
   $('menu').classList.toggle('hidden', s !== 'menu');
   $('map').classList.toggle('hidden', s !== 'map');
   $('hud').classList.toggle('hidden', s !== 'hud' && s !== 'over' && s !== 'results');
@@ -110,13 +190,15 @@ function resetHud(level: boolean): void {
   $('star-slots').querySelectorAll('span').forEach((s) => { s.classList.remove('got'); s.innerHTML = STAR_SVG; });
   $('progress-fill').style.width = '0%';
   $('progress-me').style.left = '0%';
+  $('powers').innerHTML = '';
+  $('landing').classList.add('hidden');
 }
 
 function playEndless(): void {
   cancelTimers();
   current = 0;
   resetHud(false);
-  game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0);
+  game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
   audio.playMusic('run');
 }
@@ -126,7 +208,7 @@ function playLevel(n: number): void {
   current = n;
   resetHud(true);
   $('level-chip').textContent = levelName(n);
-  game.startLevel(n, autoplay, idle, autoplay ? skip : 0);
+  game.startLevel(n, autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
   audio.playMusic('run');
 }
@@ -185,24 +267,35 @@ syncMuteIcon();
 // --- swipes: one move per swipe, fired as soon as the finger has moved 24 px ---
 const SWIPE_PX = 24;
 let start: { x: number; y: number; id: number; fired: boolean } | null = null;
+// Hold-to-boost: a press that stays put (no swipe) for HOLD_MS speeds the run up until release (Boost in core/runner.ts).
+const HOLD_MS = 150;
+let holdTimer = 0;
+const releaseBoost = () => { clearTimeout(holdTimer); game.setBoost(false); };
 window.addEventListener('pointerdown', (e) => {
   audio.unlock();
   start = { x: e.clientX, y: e.clientY, id: e.pointerId, fired: false };
+  clearTimeout(holdTimer);
+  if (screen === 'hud' && !(e.target as Element).closest?.('button')) {
+    holdTimer = window.setTimeout(() => { if (start && !start.fired) game.setBoost(true); }, HOLD_MS);
+  }
 });
 window.addEventListener('pointermove', (e) => {
   if (!start || start.fired || e.pointerId !== start.id) return;
   const dx = e.clientX - start.x, dy = e.clientY - start.y;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_PX) return;
   start.fired = true;
+  releaseBoost(); // it became a swipe
   const move: Move = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
   game.queue(move);
 });
-const endSwipe = () => { start = null; };
+const endSwipe = () => { start = null; releaseBoost(); };
 window.addEventListener('pointerup', endSwipe);
 window.addEventListener('pointercancel', endSwipe);
 // keyboard for testing on a computer
 const keys: Record<string, Move> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
-window.addEventListener('keydown', (e) => { const m = keys[e.key]; if (m) { e.preventDefault(); game.queue(m); } });
+window.addEventListener('keydown', (e) => { if (e.key === ' ' && screen === 'hud') { e.preventDefault(); game.setBoost(true); return; } const m = keys[e.key]; if (m) { e.preventDefault(); game.queue(m); } });
+window.addEventListener('keyup', (e) => { if (e.key === ' ') game.setBoost(false); });
+window.addEventListener('blur', releaseBoost);
 // iPad Safari: block pinch-zoom, double-tap zoom and the context menu; only the map may scroll
 for (const ev of ['gesturestart', 'gesturechange', 'dblclick', 'contextmenu']) document.addEventListener(ev, (e) => e.preventDefault());
 document.addEventListener('touchmove', (e) => { if (!(e.target as Element).closest?.('.scroll')) e.preventDefault(); }, { passive: false });
