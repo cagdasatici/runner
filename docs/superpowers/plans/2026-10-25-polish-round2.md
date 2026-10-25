@@ -344,3 +344,29 @@ Verify: `npx tsc --noEmit` and `npx vitest run tests/streak.test.ts` (no logic c
 Visual check: POSES=run, screenshots to `/tmp/sr-shots-s6`, compare against `/tmp/sr-shots-s4-before/characters-adventurer-run.png`
 (the pre-HD shot). Expected: sky blue as saturated as or more than the before shot; distant buildings coloured, not grey;
 edges still crisp. If the sky is still clearly greyer than before, stop and report (do not try further changes).
+
+---
+
+## Slice 7 — Clear blue sky band on day themes
+
+Files: `src/gfx/envTextures.ts`, `src/gfx/themes.ts`
+Commit: `feat(web): clear blue visible sky on day themes - bluer horizon/mid colours, gradient mid stop lowered`
+
+Root cause: the gameplay camera only sees the sky just above the horizon (texture rows ~0.35–0.5), where day themes
+are near-white (`horizon` ≈ 0xd9f0fb), and `mid` sits high at stop 0.28.
+
+1. `src/gfx/envTextures.ts` `skyTexture`: change `g.addColorStop(0.28, hex(t.sky.mid));` to `g.addColorStop(0.4, hex(t.sky.mid));`.
+2. `src/gfx/themes.ts` — change ONLY these values (exact replacements; leave every other field and theme alone):
+   | theme id | `sky.mid` | `sky.horizon` | `sky.below` | `fog.color` |
+   |---|---|---|---|---|
+   | `sunny-city` | `0x4fb0f5` | `0xa8dcf7` | `0xa8dcf7` | `0xb8e2f8` |
+   | `snow-village` | `0x8fbdf0` | `0xcfe5f8` | `0xcfe5f8` | `0xd6e8f8` |
+   | `harbour-bay` | `0x4aaaf0` | `0xa6d8f5` | `0xa6d8f5` | `0xb4dcf4` |
+   | `autumn-park` | `0x7fbcf0` | unchanged | unchanged | unchanged |
+   | `desert-canyon` | `0x6cc0ec` | unchanged | unchanged | unchanged |
+
+Verify: `npx tsc --noEmit` and `npx vitest run tests/streak.test.ts` (if any test file asserts theme colours —
+`grep -rn "0xd9f0fb\|0xeef6fd\|0xe0f1fa" tests/` — update those numbers to the new values and also run that test file).
+Visual check: POSES=run, screenshots to `/tmp/sr-shots-s7`. Expected: the sky band above the street (level 1-1, sunny city)
+is a clearly visible blue, the horizon light blue, distant buildings blend into it without a white band.
+If the sky is still mostly grey/white, stop and report.
