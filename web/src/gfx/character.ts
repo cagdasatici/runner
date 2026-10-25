@@ -147,6 +147,7 @@ export class RunnerFigure {
       model.position.y = -box.min.y;
       if (def.beardless) removeBeard(model, wrap);
       if (def.extras?.length) addHeadExtras(model, wrap, def.extras);
+      if (def.bigHead) model.traverse((o) => { if ((o as THREE.Bone).isBone && o.name === 'Head') o.scale.multiplyScalar(def.bigHead!); });
       const mixer = new THREE.AnimationMixer(model);
       const actions = new Map<string, THREE.AnimationAction>();
       for (const clip of gltf.animations) actions.set(clip.name, mixer.clipAction(clip));
@@ -407,25 +408,47 @@ function addHeadExtras(model: THREE.Group, wrap: THREE.Group, extras: NonNullabl
   const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
   const w = size.x, h = size.y, front = box.min.z; // the model faces -z
   // built in world units on an unscaled scratch parent, then attach() keeps that world transform under the bone
-  const place = (m: THREE.Object3D, x: number, y: number, z: number) => { m.position.set(x, y, z); new THREE.Group().add(m); m.updateMatrixWorld(true); bone!.attach(m); };
+  const place = (m: THREE.Object3D, x: number, y: number, z: number, to: THREE.Object3D = bone!) => { m.position.set(x, y, z); new THREE.Group().add(m); m.updateMatrixWorld(true); to.attach(m); };
   if (extras.includes('longHair')) {
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0x8a5530, roughness: 0.75 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0xa8774c, roughness: 0.75 });
     const back = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.42, h * 0.75, 8, 20), hairMat);
     back.scale.set(1.15, 1, 0.55);
     back.castShadow = true;
-    place(back, c.x, box.min.y + h * 0.15, c.z + size.z * 0.28);
+    place(back, c.x, box.min.y - h * 0.45, c.z + size.z * 0.3);
     for (const sx of [-1, 1]) {
-      const side = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.13, h * 0.6, 6, 12), hairMat);
+      const side = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.12, h * 1.1, 6, 12), hairMat);
       side.castShadow = true;
-      place(side, c.x + sx * w * 0.47, box.min.y + h * 0.2, c.z - size.z * 0.05);
+      place(side, c.x + sx * w * 0.5, box.min.y - h * 0.05, c.z + size.z * 0.02);
+    }
+    // fringe across the forehead so the face reads as a girl's, not a bald crown
+    const fringe = new THREE.Mesh(new THREE.SphereGeometry(w * 0.56, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), hairMat);
+    fringe.scale.set(1, 1, 1.05);
+    place(fringe, c.x, box.min.y + h * 0.55, c.z);
+  }
+  if (extras.includes('dress')) {
+    const legs = model.getObjectByName('Adventurer_Legs');
+    let hips: THREE.Object3D | undefined;
+    model.traverse((o) => { if ((o as THREE.Bone).isBone && o.name === 'Hips') hips = o; });
+    if (legs && hips) {
+      const lb = new THREE.Box3().setFromObject(legs, true), lh = lb.max.y - lb.min.y, r = (lb.max.x - lb.min.x) * 0.5;
+      const top = lb.max.y + lh * 0.02, bottom = lb.max.y - lh * 0.5;
+      // flared A-line skirt: waist -> knee
+      const pts = [[r * 0.8, top], [r * 1.0, top - (top - bottom) * 0.25], [r * 1.5, top - (top - bottom) * 0.65], [r * 1.85, bottom]].map(([x, y]) => new THREE.Vector2(x, y));
+      const skirt = new THREE.Mesh(new THREE.LatheGeometry(pts, 28), new THREE.MeshStandardMaterial({ color: 0x5b7db1, roughness: 0.7, side: THREE.DoubleSide }));
+      skirt.castShadow = true;
+      const hem = new THREE.Mesh(new THREE.TorusGeometry(r * 1.85, r * 0.07, 6, 28), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 }));
+      hem.rotation.x = Math.PI / 2;
+      hem.position.y = bottom;
+      skirt.add(hem);
+      place(skirt, (lb.max.x + lb.min.x) / 2, 0, (lb.max.z + lb.min.z) / 2, hips);
     }
   }
   if (extras.includes('glasses')) {
-    const frame = new THREE.MeshStandardMaterial({ color: 0xc9a28f, roughness: 0.3 });
+    const frame = new THREE.MeshStandardMaterial({ color: 0xd9d9de, roughness: 0.25 });
     const g = new THREE.Group();
     const r = w * 0.13, eyeY = box.min.y + h * 0.42;
     for (const sx of [-1, 1]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.24, 8, 24), frame);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.14, 8, 24), frame);
       ring.position.x = sx * r * 1.2;
       g.add(ring);
     }

@@ -27,7 +27,9 @@ export interface CharacterDef {
   /** Meshes (by glTF node name) left out of the model. */
   hide?: string[];
   /** Extra props built in code and attached to the head bone. */
-  extras?: ('glasses' | 'longHair')[];
+  extras?: ('glasses' | 'longHair' | 'dress')[];
+  /** Head bone scale: children get proportionally bigger heads. */
+  bigHead?: number;
   /** Cuts the beard out of the adventurer's hair mesh (it shares the Hair material). */
   beardless?: boolean;
 }
@@ -64,11 +66,14 @@ export const CHARACTERS: readonly CharacterDef[] = [
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
   kid('arel', 'Arel', 1.3, {
-    recolor: { Hair: 0x9a6a3c, Eyebrows: 0x5a3a20, Green: 0xf4c430, LightGreen: 0xf7d154, Brown: 0x334155, Brown2: 0x1e293b },
+    bigHead: 1.3,
+    recolor: { Hair: 0xb08a5a, Eyebrows: 0x6b5030, Green: 0x3a9d5d, LightGreen: 0x4fb46f, Brown: 0x334155, Brown2: 0x1e293b },
   }),
   kid('nora', 'Nora', 1.35, {
-    recolor: { Hair: 0x8a5530, Eyebrows: 0x5a3a20, Green: 0xf8f6f0, LightGreen: 0xffffff, Brown: 0x5b7db1, Brown2: 0x4a6a9c },
-    extras: ['longHair', 'glasses'],
+    bigHead: 1.3,
+    // Brown/Brown2 are the trousers: skin-coloured so the legs under the skirt read as bare; Green/LightGreen is the bodice
+    recolor: { Hair: 0xa8774c, Eyebrows: 0x7a5a38, Green: 0xf4f4f6, LightGreen: 0xffffff, Brown: 0xf2c9a6, Brown2: 0xe8bb96 },
+    extras: ['longHair', 'dress', 'glasses'],
   }),
   {
     id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1,
