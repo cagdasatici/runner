@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  barSeconds, chordMidi, coinMidi, generateBar, layerRamp, levelFor, LAYER_OF, nextBpm, Sequencer, stepSeconds, targetBpm,
+  barSeconds, chordMidi, coinMidi, generateBar, layerRamp, levelFor, LAYER_OF, MOTIFS, nextBpm, sectionChord, sectionOf, Sequencer, stepSeconds, targetBpm,
   type NoteEvent,
 } from '../src/audio/music';
 import { ENDLESS_THEME, MENU_THEME, themeFor, WORLD_THEMES } from '../src/audio/themes';
@@ -74,7 +74,7 @@ describe('layers', () => {
   });
   it('instruments sit on the specified layers', () => {
     const insts = (l: number) => new Set(generateBar(WORLD_THEMES[0], 3).filter((e) => e.layer === l).map((e) => e.inst));
-    expect([...insts(0)].sort()).toEqual(['kick', 'pad']);
+    expect([...insts(0)].sort()).toEqual(['kick', 'lead', 'pad']);
     expect([...insts(1)].sort()).toEqual(['bass', 'hat', 'pluck', 'snare']);
     expect([...insts(2)]).toEqual(['arp']);
     expect(insts(3).has('tom')).toBe(true);
@@ -118,6 +118,48 @@ describe('generation', () => {
   it('chords are diatonic triads/sevenths', () => {
     expect(chordMidi(WORLD_THEMES[0], 0, 48)).toEqual([48, 52, 55]);
     expect(chordMidi(WORLD_THEMES[0], 5, 48)).toEqual([57, 60, 64]);
+  });
+});
+
+describe('composition', () => {
+  it('follows a 32-bar verse / chorus / verse 2 / breakdown form', () => {
+    expect([0, 8, 16, 24, 32].map((b) => sectionOf(b).section)).toEqual(['verse', 'chorus', 'verse2', 'breakdown', 'verse']);
+  });
+  it('the lead plays the theme motif, not random notes, and repeats it when the form repeats', () => {
+    const th = WORLD_THEMES[0];
+    const lead = (b: number) => generateBar(th, b).filter((e) => e.inst === 'lead').map((e) => [e.step, e.midi]);
+    expect(lead(0).map(([s]) => s)).toEqual(MOTIFS[th.melody[0]].map(([s]) => s));
+    expect(lead(0)).toEqual(lead(32));
+    expect(lead(0)).toEqual(lead(16)); // verse 2 reuses the verse tune
+    expect(lead(8)).not.toEqual(lead(0)); // chorus has its own hook
+  });
+  it('sections change the arrangement: chorus is busier, breakdown drops the groove and builds back in', () => {
+    const th = WORLD_THEMES[0];
+    const n = (b: number, inst: string) => generateBar(th, b).filter((e) => e.inst === inst).length;
+    expect(n(8, 'arp')).toBeGreaterThanOrEqual(n(1, 'arp'));
+    expect(n(25, 'hat')).toBe(0);
+    expect(n(25, 'kick')).toBe(1);
+    expect(n(31, 'snare')).toBeGreaterThan(8); // roll back into the verse
+    expect(n(8, 'crash')).toBe(1);
+    expect(n(7, 'tom')).toBeGreaterThan(2); // fill at the end of the phrase
+  });
+  it('humanises velocity and timing a little, but keeps kicks on the grid', () => {
+    const ev = generateBar(WORLD_THEMES[2], 5);
+    const hats = ev.filter((e) => e.inst === 'hat');
+    expect(new Set(hats.map((e) => e.vel.toFixed(3))).size).toBeGreaterThan(3);
+    for (const e of ev) {
+      expect(Math.abs(e.nudge ?? 0)).toBeLessThanOrEqual(0.06);
+      if (e.inst === 'kick') expect(e.nudge).toBe(0);
+    }
+  });
+  it('bass walks into the next chord with an in-key approach note', () => {
+    const th = WORLD_THEMES[0];
+    for (let b = 0; b < 32; b++) {
+      const { section, bar } = sectionOf(b);
+      if (section === 'breakdown' || bar === 7) continue;
+      const walk = generateBar(th, b).find((e) => e.inst === 'bass' && e.step === 15);
+      if (sectionChord(th.prog, section, bar) !== sectionChord(th.prog, section, bar + 1) && th.bassPattern[15] === '.') expect(walk).toBeDefined();
+    }
   });
 });
 

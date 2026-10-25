@@ -16,7 +16,10 @@ export const DUCK_GAIN = 0.5;         // -6 dB
 
 interface Bus { dry: GainNode; wet: GainNode; echo: GainNode; wetAmt: number; echoAmt: number }
 interface Ramp { t0: number; t1: number; v0: number; v1: number }
-interface Session { gain: GainNode; layers: Bus[]; ramps: Ramp[] }
+/** layers = drum buses; tonal = pad/bass/arp/lead buses that the kick pumps (sidechain-style). */
+interface Session { gain: GainNode; pump: GainNode; layers: Bus[]; tonal: Bus[]; ramps: Ramp[] }
+const DRUMS = new Set(['kick', 'snare', 'clap', 'hat', 'ohat', 'tom', 'shaker', 'crash']);
+export const PUMP_DEPTH = 0.45; // tonal layers dip to 55 % on each kick
 
 const STINGERS = new Set(['star', 'powerup', 'boardbreak', 'combo', 'win']);
 
@@ -227,8 +230,45 @@ export class MusicEngine {
     this.noiseHit({ t, dur: 0.012, type: 'bandpass', f: 2200, q: 0.8, peak: 0.07 * vel, bus, prio: 3 });
   }
   private snare(t: number, vel: number, bus: Bus): void {
-    this.noiseHit({ t, dur: 0.17, type: 'bandpass', f: 1900, f2: 1200, q: 0.7, peak: 0.2 * vel, bus, wet: 0.35, prio: 2 });
-    this.blip({ t, f: 210, f2: 150, type: 'triangle', dur: 0.1, peak: 0.16 * vel, bus, prio: 2 });
+    // body (two detuned drum-head tones) + crack (bandpassed noise) + sizzle (highpassed noise tail)
+    this.blip({ t, f: 240, f2: 170, type: 'triangle', dur: 0.09, peak: 0.15 * vel, detune: 30, bus, prio: 2 });
+    this.noiseHit({ t, dur: 0.12, type: 'bandpass', f: 2100, f2: 1300, q: 0.9, peak: 0.19 * vel, bus, wet: 0.35, prio: 2 });
+    if (vel > 0.4) this.noiseHit({ t, dur: 0.2, type: 'highpass', f: 5200, q: 0.4, peak: 0.07 * vel, bus, wet: 0.3, prio: 1 });
+  }
+  private cymbal(t: number, vel: number, bus: Bus): void {
+    this.noiseHit({ t, dur: 1.6, type: 'highpass', f: 6000, f2: 4200, q: 0.4, peak: 0.07 * vel, bus, wet: 0.5, prio: 1, pan: -0.15 });
+    this.noiseHit({ t, dur: 0.6, type: 'bandpass', f: 3400, q: 0.6, peak: 0.04 * vel, bus, wet: 0.4, prio: 1, pan: 0.2 });
+  }
+  /** Lead: two detuned oscillators + square an octave down, filter that opens per note, delayed vibrato. */
+  private lead(t: number, vel: number, midi: number, dur: number, th: Theme, bus: Bus): void {
+    if (!this.claim(2)) return;
+    const ctx = this.ctx, f = midiToFreq(midi), end = t + Math.max(0.1, dur);
+    const g = ctx.createGain(), lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 2;
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.linearRampToValueAtTime(2600 + 1400 * vel, t + 0.03);
+    lp.frequency.setTargetAtTime(1500, t + 0.04, 0.15);
+    const peak = 0.075 * vel;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + 0.012);
+    g.gain.setTargetAtTime(peak * 0.7, t + 0.02, 0.12);
+    g.gain.setValueAtTime(peak * 0.7, end);
+    g.gain.linearRampToValueAtTime(0, end + 0.12);
+    const vib = ctx.createOscillator(), vibG = ctx.createGain();
+    vib.frequency.value = 5.3;
+    vibG.gain.setValueAtTime(0, t); vibG.gain.linearRampToValueAtTime(dur > 0.35 ? 12 : 0, t + Math.min(dur, 0.45));
+    vib.connect(vibG); vib.start(t); vib.stop(end + 0.15);
+    const main: OscillatorType = th.lead === 'sine' ? 'triangle' : th.lead;
+    const parts: [OscillatorType, number, number, number][] = [[main, f, -7, 0.55], [main, f, 7, 0.55], ['square', f / 2, 0, 0.18]];
+    let last: OscillatorNode | null = null;
+    for (const [type, hz, cents, amp] of parts) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz; o.detune.value = cents;
+      vibG.connect(o.detune);
+      const og = ctx.createGain(); og.gain.value = amp;
+      o.connect(og); og.connect(lp); o.start(t); o.stop(end + 0.15); last = o;
+    }
+    lp.connect(g);
+    if (last) this.track(last);
+    this.route(g, bus, 0.3, 0.25, 0.05);
   }
   private clap(t: number, vel: number, bus: Bus): void {
     for (const off of [0, 0.011, 0.024]) {
@@ -236,7 +276,8 @@ export class MusicEngine {
     }
   }
   private hat(t: number, vel: number, bus: Bus, open: boolean): void {
-    this.noiseHit({ t, dur: open ? 0.16 : 0.035, type: 'highpass', f: 6500, q: 0.5, peak: (open ? 0.05 : 0.04) * vel, bus, prio: 1, pan: open ? -0.2 : 0.2 });
+    // velocity also shortens/darkens the hat, so accents read as accents and not just as louder copies
+    this.noiseHit({ t, dur: open ? 0.22 : 0.02 + 0.03 * vel, type: 'highpass', f: 6000 + 2500 * vel, f2: open ? 5000 : undefined, q: 0.6, peak: (open ? 0.05 : 0.045) * vel, bus, wet: open ? 0.15 : 0, prio: 1, pan: open ? -0.2 : 0.2 });
   }
   private shaker(t: number, vel: number, bus: Bus): void {
     this.noiseHit({ t, dur: 0.05, type: 'bandpass', f: 5200, q: 0.9, peak: 0.05 * vel, att: 0.012, bus, prio: 1, pan: -0.25 });
@@ -249,9 +290,10 @@ export class MusicEngine {
     if (!this.claim(3)) return;
     const ctx = this.ctx, f = midiToFreq(midi), end = t + dur;
     const g = ctx.createGain(), lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.Q.value = 1.2;
-    lp.frequency.setValueAtTime(th.bass === 'sine' ? 700 : 1500, t);
-    lp.frequency.exponentialRampToValueAtTime(260, t + 0.18);
+    // plucky: resonant filter snaps shut, harder notes open it further
+    lp.type = 'lowpass'; lp.Q.value = 4;
+    lp.frequency.setValueAtTime((th.bass === 'sine' ? 600 : 900) + 1600 * vel, t);
+    lp.frequency.exponentialRampToValueAtTime(220, t + 0.12);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.3 * vel, t + 0.006);
     g.gain.setTargetAtTime(0.18 * vel, t + 0.02, 0.08);
     g.gain.linearRampToValueAtTime(0, end + 0.04);
@@ -268,9 +310,13 @@ export class MusicEngine {
     if (!this.claim(3)) return;
     const ctx = this.ctx, end = t + secs;
     const g = ctx.createGain(), lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.Q.value = 0.5;
-    lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(1500, t + secs * 0.6);
-    lp.frequency.linearRampToValueAtTime(700, end + 0.4);
+    // filter envelope swells through the bar; a slow LFO keeps the sustain moving
+    lp.type = 'lowpass'; lp.Q.value = 1.1;
+    lp.frequency.setValueAtTime(380, t); lp.frequency.linearRampToValueAtTime(900 + 1400 * vel, t + secs * 0.45);
+    lp.frequency.linearRampToValueAtTime(650, end + 0.4);
+    const lfo = ctx.createOscillator(), lfoG = ctx.createGain();
+    lfo.frequency.value = 0.35; lfoG.gain.value = 180; lfo.connect(lfoG); lfoG.connect(lp.frequency);
+    lfo.start(t); lfo.stop(end + 0.6);
     const per = 0.05 * vel / Math.sqrt(notes.length);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(per * 3, t + 0.45);
     g.gain.setValueAtTime(per * 3, end - 0.05); g.gain.linearRampToValueAtTime(0, end + 0.5);
@@ -278,9 +324,9 @@ export class MusicEngine {
     let last: OscillatorNode | null = null;
     notes.forEach((m, i) => {
       const f = midiToFreq(m);
-      for (const [type, cents] of [[th.pad, -9], [th.pad, 9], ['sine', 0]] as [OscillatorType, number][]) {
+      for (const [type, cents] of [[th.pad, -11], [th.pad, 4], [th.pad, 13], ['sine', 0]] as [OscillatorType, number][]) {
         const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.detune.value = cents + (i % 2) * 2;
-        const og = ctx.createGain(); og.gain.value = type === 'sine' ? 0.6 : 0.5;
+        const og = ctx.createGain(); og.gain.value = type === 'sine' ? 0.6 : 0.38;
         o.connect(og); og.connect(lp); o.start(t); o.stop(end + 0.6); last = o;
       }
     });
@@ -290,12 +336,22 @@ export class MusicEngine {
 
   private playEvent(e: NoteEvent, time: number, sd: number, sess: Session): void {
     const th = this.theme!;
-    const bus = sess.layers[e.layer];
+    const bus = (DRUMS.has(e.inst) ? sess.layers : sess.tonal)[e.layer];
     if (!this.layerAudible(sess, e.layer, time)) return;
     this.stats.scheduled++;
     const dur = e.dur * sd;
     switch (e.inst) {
-      case 'kick': this.kick(time, e.vel, bus); break;
+      case 'kick': {
+        this.kick(time, e.vel, bus);
+        const p = sess.pump.gain; // sidechain-style pump on the tonal layers
+        p.cancelScheduledValues(time);
+        p.setValueAtTime(1, time);
+        p.linearRampToValueAtTime(1 - PUMP_DEPTH * e.vel, time + 0.012);
+        p.setTargetAtTime(1, time + 0.03, Math.min(0.09, sd * 0.9));
+        break;
+      }
+      case 'crash': this.cymbal(time, e.vel, bus); break;
+      case 'lead': this.lead(time, e.vel, e.midi!, dur, th, bus); break;
       case 'snare': this.snare(time, e.vel, bus); break;
       case 'clap': this.clap(time, e.vel, bus); break;
       case 'hat': this.hat(time, e.vel, bus, false); break;
@@ -321,9 +377,12 @@ export class MusicEngine {
   private newSession(): Session {
     const gain = this.ctx.createGain();
     gain.connect(this.musicFilter);
+    const pump = this.ctx.createGain();
+    pump.connect(gain);
     const mix: [number, number][] = [[0.3, 0], [0.12, 0], [0.2, 0.3], [0.25, 0.15]];
     const layers = mix.map(([w, e]) => this.makeBus(gain, w, e));
-    return { gain, layers, ramps: [0, 1, 2, 3].map((l) => ({ t0: 0, t1: 0, v0: l === 0 ? 1 : 0, v1: l === 0 ? 1 : 0 })) };
+    const tonal = mix.map(([w, e]) => this.makeBus(pump, w, e));
+    return { gain, pump, layers, tonal, ramps: [0, 1, 2, 3].map((l) => ({ t0: 0, t1: 0, v0: l === 0 ? 1 : 0, v1: l === 0 ? 1 : 0 })) };
   }
   private rampValue(r: Ramp, t: number): number {
     if (t >= r.t1) return r.v1;
@@ -334,11 +393,12 @@ export class MusicEngine {
     const r = sess.ramps[l];
     const v0 = this.rampValue(r, t0);
     sess.ramps[l] = { t0, t1: Math.max(t1, t0 + 0.001), v0, v1: to };
-    const bus = sess.layers[l];
-    for (const [p, k] of [[bus.dry.gain, 1], [bus.wet.gain, bus.wetAmt], [bus.echo.gain, bus.echoAmt]] as [AudioParam, number][]) {
-      p.cancelScheduledValues(t0);
-      p.setValueAtTime(v0 * k, t0);
-      p.linearRampToValueAtTime(to * k, t1);
+    for (const bus of [sess.layers[l], sess.tonal[l]]) {
+      for (const [p, k] of [[bus.dry.gain, 1], [bus.wet.gain, bus.wetAmt], [bus.echo.gain, bus.echoAmt]] as [AudioParam, number][]) {
+        p.cancelScheduledValues(t0);
+        p.setValueAtTime(v0 * k, t0);
+        p.linearRampToValueAtTime(to * k, t1);
+      }
     }
   }
   private layerAudible(sess: Session, l: number, t: number): boolean {
@@ -406,7 +466,7 @@ export class MusicEngine {
     // Realtime only: drop the old graph once it has faded and its reverb tails are gone.
     if (typeof setTimeout === 'function' && this.realtime) {
       const wait = (Math.max(0, at - this.ctx.currentTime) + fade + 0.1) * 1000;
-      setTimeout(() => { try { sess.gain.disconnect(); for (const b of sess.layers) { b.dry.disconnect(); } } catch { /* already gone */ } }, wait + 3000);
+      setTimeout(() => { try { sess.gain.disconnect(); for (const b of [...sess.layers, ...sess.tonal]) { b.dry.disconnect(); } } catch { /* already gone */ } }, wait + 3000);
     }
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
   }

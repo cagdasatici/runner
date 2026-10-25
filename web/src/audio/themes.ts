@@ -24,13 +24,19 @@ export interface Theme {
   bassPattern: string;       // 16 chars: r root, o octave, f fifth, . rest
   stabs: readonly number[];  // 16th steps for chord plucks
   fixedLevel: number | null; // menu: ignore speed and stay on this layer
+  melody: readonly [number, number, number, number]; // motif ids (music.ts MOTIFS) for the theme's tune
 }
 
 interface Def {
   id: string; rootPc: number; scale: ScaleName; prog: number[]; bpm: [number, number]; drums: DrumStyle;
   lead: Wave; pad: Wave; bass: Wave; sevenths?: boolean; arpRate?: 1 | 2; contour?: number[]; bassPat?: string;
-  stabs?: number[]; swing?: number; fixed?: number;
+  stabs?: number[]; swing?: number; fixed?: number; mel?: [number, number, number, number];
 }
+
+// Motif sets: [verse A, verse B, chorus hook, chorus answer]. Each world gets its own tune.
+const MELODIES: [number, number, number, number][] = [
+  [0, 2, 3, 1], [3, 7, 5, 2], [2, 0, 6, 4], [7, 1, 0, 5], [1, 3, 4, 6], [6, 2, 3, 7], [4, 0, 5, 1], [5, 7, 6, 0],
+];
 
 const CONTOURS = [[0, 1, 2, 3, 2, 1, 2, 1], [0, 2, 1, 3, 2, 3, 1, 2], [0, 1, 2, 1, 3, 2, 1, 0], [3, 2, 1, 0, 1, 2, 3, 2]];
 const BASS = ['r.o.r.o.r.o.r.f.', 'r..or..or..or.f.', 'r.rrr.or.rrr.of.', 'r...r.o.r...r.f.', 'rr.or.r.rr.or.of'.padEnd(16, '.')];
@@ -38,7 +44,8 @@ const BASS = ['r.o.r.o.r.o.r.f.', 'r..or..or..or.f.', 'r.rrr.or.rrr.of.', 'r...r
 function make(d: Def, i: number): Theme {
   return {
     id: d.id, seed: 1000 + i * 77, rootPc: d.rootPc, scaleName: d.scale, scale: SCALES[d.scale], prog: d.prog,
-    sevenths: d.sevenths ?? false, bpmMin: d.bpm[0], bpmMax: d.bpm[1], drums: d.drums, swing: d.swing ?? 0,
+    sevenths: d.sevenths ?? false, bpmMin: d.bpm[0], bpmMax: d.bpm[1], drums: d.drums, swing: d.swing ?? 0.06, // a little swing everywhere: straight 16ths sound robotic
+    melody: d.mel ?? MELODIES[i % MELODIES.length],
     lead: d.lead, pad: d.pad, bass: d.bass, arpRate: d.arpRate ?? 1, arpContour: d.contour ?? CONTOURS[i % 4],
     bassPattern: d.bassPat ?? BASS[i % 5], stabs: d.stabs ?? [2, 6, 10, 14], fixedLevel: d.fixed ?? null,
   };
@@ -61,7 +68,7 @@ const DEFS: Def[] = [
 ];
 
 export const WORLD_THEMES: readonly Theme[] = DEFS.map(make);
-export const MENU_THEME: Theme = make({ id: 'menu', rootPc: 5, scale: 'major', prog: [0, 3, 0, 4], bpm: [92, 92], drums: 'half', lead: 'triangle', pad: 'triangle', bass: 'sine', arpRate: 2, contour: [0, 1, 2, 1, 3, 2, 1, 2], bassPat: 'r.......o.......', stabs: [6, 14], fixed: 1 }, 20);
+export const MENU_THEME: Theme = make({ id: 'menu', rootPc: 5, scale: 'major', prog: [0, 3, 0, 4], bpm: [92, 92], drums: 'half', lead: 'triangle', pad: 'triangle', bass: 'sine', arpRate: 2, contour: [0, 1, 2, 1, 3, 2, 1, 2], bassPat: 'r.......o.......', stabs: [6, 14], fixed: 1, swing: 0.16, mel: [2, 7, 0, 4] }, 20);
 export const ENDLESS_THEME: Theme = make({ id: 'endless', rootPc: 2, scale: 'dorian', prog: [0, 3, 6, 4], bpm: [112, 136], drums: 'four', lead: 'sawtooth', pad: 'sawtooth', bass: 'triangle', sevenths: true }, 21);
 
 export type MusicMode = 'menu' | 'run' | 'endless' | 'results';
