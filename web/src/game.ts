@@ -469,10 +469,10 @@ export class Game {
 
     const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
     this.power.update(vs, track.pickups, this.time, VIEW_AHEAD, this.frameDt, this.glow);
-    this.figure.pose(vs, this.frameDt, speedOf(s, p.pace));
     const celebrating = !!p.level?.finished && this.finishT >= COAST_SECONDS;
-    // Optional hook owned by gfx/character.ts; guarded so this compiles whether or not it exists yet.
-    if (celebrating) (this.figure as unknown as { celebrate?: (t: number) => void }).celebrate?.(this.finishT - COAST_SECONDS);
+    if (this.debugPose === 'celebrate') this.figure.celebrate(this.time % 3, this.frameDt, vs);
+    else if (celebrating) this.figure.celebrate(this.finishT - COAST_SECONDS, this.frameDt, vs);
+    else this.figure.pose(vs, this.frameDt, speedOf(s, p.pace));
     // crash-proof for a moment after landing (or a stumble): the runner blinks
     this.figure.root.visible = !(s.iframes > 0 && !s.crashed && s.fly === 0 && Math.floor(this.time * 14) % 2 === 0);
     if (s.fly > 0 && this.boost && !s.crashed) { // lightning: streaks of light rushing past
