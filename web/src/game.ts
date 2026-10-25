@@ -86,6 +86,8 @@ function forcePose(s: RunnerState, pose: string): RunnerState {
     case 'fly': v.fly = 500; v.y = 5.5; break;
     case 'board': v.board = 3000; break;
     case 'stumble': v.stumbles += 1; break;
+    case 'chaser': v.chaser = 240; break;
+    case 'chaser-close': v.chaser = 240; v.slow = 30; break;
   }
   return v;
 }
