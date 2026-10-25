@@ -6,6 +6,7 @@ import { laneX } from '../core/track';
 import { applyThemeToMaterials, type EnvMaterials } from './envMaterials';
 import { backdropTexture, mix, skyTexture } from './envTextures';
 import { Merger } from './merge';
+import { SkyDome } from './skyDome';
 import { BOX, box, CONE, CYL, ICO, placeProp, placeShrub, type Ctx } from './props';
 import { clearVehicleCache } from './vehicles';
 import type { Theme } from './themes';
@@ -21,6 +22,9 @@ export class Environment {
   private backdrop: THREE.Mesh;
   private backdropMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, fog: false });
   private skyTex: THREE.Texture | null = null;
+  readonly dome = new SkyDome();
+  private fogBase = new THREE.Color();
+  private fogTint = new THREE.Color();
   private envTex: THREE.Texture | null = null;
   private pmrem: THREE.PMREMGenerator;
   theme: Theme | null = null;
@@ -39,11 +43,18 @@ export class Environment {
     this.backdrop.renderOrder = -1;
     this.backdrop.frustumCulled = false;
     scene.add(this.backdrop);
+    scene.add(this.dome.mesh);
   }
 
   setShadowSize(px: number): void {
     this.sun.shadow.mapSize.set(px, px);
     if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+  }
+
+  /** Per frame: sky drift and fog colour follow the same slow cycle. */
+  tick(time: number, camera: THREE.Camera): void {
+    const k = this.dome.update(time, camera);
+    (this.scene.fog as THREE.Fog | null)?.color.copy(this.fogBase).lerp(this.fogBase.clone().multiply(this.fogTint).multiplyScalar(1.15), k);
   }
 
   apply(t: Theme): void {
@@ -52,10 +63,13 @@ export class Environment {
     this.skyTex?.dispose();
     this.envTex?.dispose();
     this.skyTex = skyTexture(t);
-    this.scene.background = this.skyTex;
+    this.scene.background = null;
     this.envTex = this.pmrem.fromEquirectangular(this.skyTex).texture;
     this.scene.environment = this.envTex;
     this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near, t.fog.far);
+    const tint = t.stars > 0.5 ? 0x8fa8ff : t.sky.mid === 0xf2788a ? 0xffb38a : 0xffd9a8; // night: cooler, sunset: warmer, day: golden hour
+    this.dome.set(this.skyTex, tint, t.stars > 0.5 ? 0.35 : 1);
+    this.fogBase.setHex(t.fog.color); this.fogTint.setHex(tint);
     this.hemi.color.setHex(t.hemi.sky);
     this.hemi.groundColor.setHex(t.hemi.ground);
     this.hemi.intensity = t.hemi.intensity;

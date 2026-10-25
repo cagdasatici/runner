@@ -303,6 +303,7 @@ export class Game {
     this.sparkles.update(dt);
     this.confetti.update(dt);
     this.env.placeBackdrop(this.camera, this.mode === 'menu');
+    this.env.tick(this.time, this.camera);
     this.renderer.info.reset();
     this.post.render(this.scene, this.camera);
     this.adaptQuality(dt);
