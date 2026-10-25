@@ -316,3 +316,31 @@ Commit: `feat(web): coin streak - x10/x25/x50 toasts for coins collected without
    If `audio.sfx` has a coin-like or power-up sound name, call it in `onStreak` too; otherwise skip.
 
 No visual check required.
+
+---
+
+## Slice 6 — Fix washed-out sky and distant haze
+
+Files: `src/gfx/post.ts`, `src/gfx/world.ts`, `src/gfx/skyDome.ts`
+Commit: `fix(web): keep sky and skyline saturated - highlight-only tone curve, farther fog, gentler sky drift`
+
+Root cause: full ACES (`c = aces(max(c, 0.0) * 1.2)`) compresses and desaturates every bright pixel, and the sky and
+fogged skyline are all bright, so they go grey. The sky drift (55 %) and cloud mix add even more grey-white.
+
+1. `src/gfx/post.ts` COMPOSITE, inside `if (hd > 0.5) { … }`: replace the line `c = aces(max(c, 0.0) * 1.2);` with
+   ```glsl
+   // highlight-only shoulder: below 0.8 untouched, above it rolls off smoothly to 1.0; hue kept (scale by max channel)
+   float m = max(max(c.r, c.g), c.b);
+   if (m > 0.8) { float mm = 0.8 + 0.2 * (1.0 - exp(-(m - 0.8) / 0.2)); c *= mm / m; }
+   c = clamp(c, 0.0, 1.0);
+   ```
+   Delete the now-unused `aces` function. Keep the sharpen and vignette lines as they are.
+2. `src/gfx/world.ts` `apply()`: change the fog line to
+   `this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near * 1.25, t.fog.far * 1.2);`
+3. `src/gfx/skyDome.ts`: in FRAG change `k * 0.55` to `k * 0.35` and `m * 0.75` to `m * 0.55`; in `update()` change the
+   returned `* 0.55` to `* 0.35`.
+
+Verify: `npx tsc --noEmit` and `npx vitest run tests/streak.test.ts` (no logic changed; the full suite takes 6 min — skip it).
+Visual check: POSES=run, screenshots to `/tmp/sr-shots-s6`, compare against `/tmp/sr-shots-s4-before/characters-adventurer-run.png`
+(the pre-HD shot). Expected: sky blue as saturated as or more than the before shot; distant buildings coloured, not grey;
+edges still crisp. If the sky is still clearly greyer than before, stop and report (do not try further changes).
