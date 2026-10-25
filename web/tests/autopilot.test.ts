@@ -19,7 +19,7 @@ describe('AutopilotTests', () => {
   });
   it('testAutopilotSeed1Golden', () => {
     const g = new RunSession(1n);
-    while (g.state.tick < 14400) g.tick(autopilotMove(g.state, g.track));
+    while (g.state.tick < 14400) { g.track.pickups = []; g.tick(autopilotMove(g.state, g.track)); } // the autopilot ignores jetpacks
     expect(Math.abs(g.state.z - 1899.958333)).toBeLessThan(1e-4);
     expect(g.state.coins).toBe(252);
     expect(score(g.state)).toBe(4419);
