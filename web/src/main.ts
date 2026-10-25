@@ -101,6 +101,12 @@ const game = new Game($('gl'), {
   onSpeed: (v) => audio.setSpeed(v),
   onJump: () => audio.sfx('jump'),
   onCoin: () => audio.sfx('coin'),
+  onStreak: (n) => {
+    audio.sfx('powerup');
+    const el = $('streak'); el.textContent = `COIN STREAK ×${n}!`;
+    el.classList.remove('hidden'); el.classList.remove('go'); void el.offsetWidth; el.classList.add('go');
+    setTimeout(() => el.classList.add('hidden'), 1300);
+  },
   onStar: (taken) => {
     audio.sfx('star');
     $('star-slots').querySelectorAll('span').forEach((s, i) => s.classList.toggle('got', i < taken));

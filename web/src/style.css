@@ -215,3 +215,7 @@ body.boosting #speedlines { opacity: 1; animation: lines 0.18s linear infinite; 
 .fuel.low { animation: ringpulse 0.5s ease-in-out infinite; }
 body.lightning::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 4; background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255, 255, 255, 0.0) 0deg 5deg, rgba(186, 230, 253, 0.28) 5deg 6deg, rgba(255, 255, 255, 0) 6deg 14deg); -webkit-mask-image: radial-gradient(circle at 50% 45%, transparent 18%, #000 75%); mask-image: radial-gradient(circle at 50% 45%, transparent 18%, #000 75%); animation: lightningspin 0.12s steps(2) infinite; }
 @keyframes lightningspin { 0% { transform: scale(1); } 100% { transform: scale(1.06); } }
+
+.streak { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); font-size: 30px; font-weight: 900; color: #fde047; -webkit-text-stroke: 2px #92400e; text-shadow: 0 4px 0 #92400e, 0 0 18px #fbbf24; z-index: 6; pointer-events: none; white-space: nowrap; }
+.streak.go { animation: streakgo 1.3s cubic-bezier(.2, 1.4, .4, 1) forwards; }
+@keyframes streakgo { 0% { transform: translateX(-50%) scale(0.2); opacity: 0; } 15% { transform: translateX(-50%) scale(1.15); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateX(-50%) translateY(-40px) scale(1); opacity: 0; } }

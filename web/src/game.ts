@@ -5,6 +5,7 @@ import { setMaxAnisotropy } from './gfx/textures';
 import * as THREE from 'three';
 import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
+import { addCoins, newStreak } from './core/streak';
 import { ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
 import { coinY, laneX, obstacleLength, type Coin, type Track } from './core/track';
 import { RunnerFigure } from './gfx/character';
@@ -34,6 +35,7 @@ export interface GameEvents {
   onStar(taken: number): void;
   onProgress(fraction: number): void;
   onBoost?(on: boolean): void;
+  onStreak?: (n: number) => void;
   onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
   onSpeed?(mps: number): void; // runner speed every frame (drives the adaptive music)
@@ -138,6 +140,7 @@ export class Game {
   private finishT = -1; // seconds since the finish line (-1 = not finished)
   private lastScore = -1;
   private lastCoins = -1;
+  private streak = newStreak();
   private lastStars = 0;
   private lastProgress = -1;
   private lastJumpTick = -100;
@@ -247,6 +250,7 @@ export class Game {
     this.finishT = -1;
     this.lastScore = this.lastCoins = this.lastProgress = -1;
     this.lastStars = 0;
+    this.streak = newStreak();
     this.lastJumpTick = -100;
     this.lastHud = '';
     this.lastCounters = [0, 0, 0, 0];
@@ -334,7 +338,11 @@ export class Game {
   private report(dt: number): void {
     const p = this.play!, s = p.state, level = p.level;
     if (s.vy > 0 && s.tick - this.lastJumpTick > 30) { this.lastJumpTick = s.tick; this.events.onJump(); }
-    if (this.lastCoins >= 0 && s.coins !== this.lastCoins) this.events.onCoin();
+    if (this.lastCoins >= 0 && s.coins !== this.lastCoins) {
+      this.events.onCoin();
+      const m = addCoins(this.streak, s.coins - this.lastCoins, this.time);
+      if (m > 0) this.events.onStreak?.(m);
+    }
     const sc = score(s);
     if (sc !== this.lastScore || s.coins !== this.lastCoins) {
       this.lastScore = sc;
