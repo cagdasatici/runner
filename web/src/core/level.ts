@@ -13,6 +13,9 @@ export const FINISH_AFTER_LAST_ROW = 14; // metres past the last row's near edge
 export const RAMP_FIRST_LEVEL = 6; // levels before this have no ramps
 export const RAMP_TRAIN_LENGTH = 28; // a ramp train (A) is long enough to run on for a while
 export const TWIN_TRAIN_LENGTH = 12; // the second roof (B) of a twin piece, in the next row
+export const CHAIN_FIRST_LEVEL = 12; // roof-to-roof chains (a second roof ahead in the same lane, one jump away) start here
+export const CHAIN_GAP = 3; // metres of air between the end of roof A and the start of roof C
+export const CHAIN_TRAIN_LENGTH = 16; // roof C
 export const RAMP_COOLDOWN = 4; // rows after a ramp piece before the next one may start
 export const ROOF_COIN_STEP = 4; // metres between roof coins
 
@@ -103,7 +106,7 @@ export function buildLevel(n: number): Level {
   //    in the lane next to L, to hop onto). Row r+2: lane L (and for a twin also B's lane) free of obstacles, so the drop
   //    from the roof always lands on a clear lane. Rows r+1 and r+2 keep one free ground lane.
   const roofLane: (number | null)[] = plan.map(() => null); // lane of the long train A that covers the row's start
-  const pieces: { row: number; lane: number; twinLane: number | null }[] = [];
+  const pieces: { row: number; lane: number; twinLane: number | null; chain: boolean }[] = [];
   if (n >= RAMP_FIRST_LEVEL) {
     const rr = new SplitMix64(spec.seed ^ 0x52414d50n);
     const pickFree = (p: RowPlan) => {
@@ -111,7 +114,8 @@ export function buildLevel(n: number): Level {
       const free = [0, 1, 2].filter((l) => !lanes.includes(l));
       p.coinLane = free[rr.int(free.length)];
     };
-    for (let r = 2; r <= spec.rows - 5; r++) {
+    const cr = new SplitMix64(spec.seed ^ 0x434841n); // own stream: chains never shift the other draws
+    for (let r = 2; r <= spec.rows - 6; r++) {
       if (rr.int(100) >= rampChance(n)) continue;
       const here = plan[r];
       const L = here.obst[rr.int(here.obst.length)].lane;
@@ -145,8 +149,20 @@ export function buildLevel(n: number): Level {
         if (after.obst.length === 0) after.obst = [{ lane: (L + 1 + rr.int(2)) % 3, kind }];
         if (after.obst.some((o) => o.lane === after.coinLane)) pickFree(after);
       }
-      pieces.push({ row: r, lane: L, twinLane: twin ? M : null });
-      r += RAMP_COOLDOWN - 1;
+      // chain: roof C in lane L, CHAIN_GAP m past the end of A, reachable with one normal jump; lane L stays clear after it
+      const chain = !twin && n >= CHAIN_FIRST_LEVEL && cr.int(100) < 50;
+      if (chain) {
+        roofLane[r + 2] = L;
+        const after3 = plan[r + 3];
+        after3.obst = after3.obst.filter((o) => o.lane !== L);
+        if (after3.obst.length === 0) after3.obst = [{ lane: (L + 1 + cr.int(2)) % 3, kind: 'hurdle' }];
+        if (after3.obst.some((o) => o.lane === after3.coinLane)) pickFree(after3);
+        const mid = plan[r + 2];
+        if (mid.obst.length === 2) mid.obst = [mid.obst[0]]; // keep a free ground lane next to the two roofs
+        if (mid.coinLane === L || mid.obst.some((o) => o.lane === mid.coinLane)) mid.coinLane = [0, 1, 2].find((l) => l !== L && !mid.obst.some((o) => o.lane === l))!; // its ground coins can't sit inside roof C
+      }
+      pieces.push({ row: r, lane: L, twinLane: twin ? M : null, chain });
+      r += RAMP_COOLDOWN - 1 + (chain ? 1 : 0);
     }
   }
   // 3. Turn the plan into obstacles and coins (ids in the same order as before).
@@ -194,6 +210,11 @@ export function buildLevel(n: number): Level {
     const z0 = rowStart(spec, pc.row);
     obstacles.push({ id: id++, kind: 'ramp', lane: pc.lane, z: z0 - RAMP_LENGTH });
     for (let d = 2; d <= RAMP_TRAIN_LENGTH - 2; d += ROOF_COIN_STEP) coins.push({ id: id++, lane: pc.lane, z: z0 + d, y: ROOF_Y + COIN_Y });
+    if (pc.chain) {
+      const zc = z0 + RAMP_TRAIN_LENGTH + CHAIN_GAP;
+      obstacles.push({ id: id++, kind: 'train', lane: pc.lane, z: zc, len: CHAIN_TRAIN_LENGTH });
+      for (let d = 2; d <= CHAIN_TRAIN_LENGTH - 2; d += ROOF_COIN_STEP) coins.push({ id: id++, lane: pc.lane, z: zc + d, y: ROOF_Y + COIN_Y });
+    }
     if (pc.twinLane !== null) {
       const z1 = rowStart(spec, pc.row + 1);
       for (let d = 2; d <= TWIN_TRAIN_LENGTH - 2; d += ROOF_COIN_STEP) coins.push({ id: id++, lane: pc.twinLane, z: z1 + d, y: ROOF_Y + COIN_Y });
@@ -204,7 +225,7 @@ export function buildLevel(n: number): Level {
   if (n >= POWER_FIRST_LEVEL) {
     const pr = new SplitMix64(spec.seed ^ 0x504f5745n);
     const pieceRows = new Set<number>();
-    for (const pc of pieces) for (let k = 0; k <= 3; k++) pieceRows.add(pc.row + k);
+    for (const pc of pieces) for (let k = 0; k <= 4; k++) pieceRows.add(pc.row + k);
     const finishZ = rowStart(spec, spec.rows - 1) + FINISH_AFTER_LAST_ROW;
     for (let row = 3; row < spec.rows - 3; row++) {
       if (pr.int(100) >= pickupChance(n)) continue;
