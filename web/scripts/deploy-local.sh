@@ -5,7 +5,7 @@
 # (the service worker's cache name changes on every build).
 set -euo pipefail
 SITE="${SUBWAY_RUNNER_SITE:-$HOME/Library/Application Support/SubwayRunner}"   # override only for testing
-npm test
+if [ "${SKIP_TESTS:-0}" = 1 ]; then echo "Skipping tests (SKIP_TESTS=1)"; else echo "Running tests (~6 min, prints when done)..."; npm test; fi
 npm run build
 mkdir -p "$SITE/www"
 rsync -a --delete dist/ "$SITE/www/"
