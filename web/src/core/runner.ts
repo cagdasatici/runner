@@ -24,6 +24,8 @@ export interface RunnerState {
   double: number;
   fly: number; // fuel of the jetpack left, in ticks (boost burns it faster)
   descend: number; // ticks of landing left
+  flyFrom: number; // feet height when the jetpack was picked up (lift-off start)
+  flyUp: number; // ticks since lift-off, capped at Power.flyRiseTicks
   iframes: number; // ticks of invulnerability left
   slow: number; // ticks of stumble slow-down left
   chaser: number; // ticks the chaser stays behind; a hit while > 0 is a crash
@@ -66,9 +68,9 @@ export const Power = {
   flyTicks: 720, // 6 s of fuel at normal speed
   flyBoostDrain: 720 / 420, // fuel burnt per tick while boosting: the tank lasts 3.5 s
   flyBoostSpeed: 2.6, // forward speed factor while flying with boost ("lightning"; Boost.factor on the ground)
-  flyHeight: 5.5, // feet height while flying: above every roof
-  flyRiseTicks: 60, // 0.5 s lift-off
-  flyDescendTicks: 96, // 0.8 s landing
+  flyHeight: 4.4, // feet height while flying: 0.9 m over the roofs (ROOF_Y 3.5)
+  flyRiseTicks: 108, // 0.9 s lift-off
+  flyDescendTicks: 132, // 1.1 s landing
   flyWarnTicks: 360, // "3-2-1" landing warning
   iframesBoard: 180, // 1.5 s after the board breaks
   iframesLanding: 180, // 1.5 s after touchdown
@@ -103,7 +105,7 @@ export const ENDLESS_PACE: Pace = { start: Runner.startSpeed, accel: Runner.acce
 export function startState(opts: StartOptions = {}): RunnerState {
   return {
     tick: 0, z: 0, lane: 1, x: 0, y: 0, floor: 0, vy: 0, slideTicks: 0, coins: 0, collected: new Set(), crashed: false,
-    points: 0, bonus: 0, board: opts.board ? Power.boardTicks : 0, magnet: 0, sneakers: 0, double: 0, fly: 0, descend: 0, iframes: 0,
+    points: 0, bonus: 0, board: opts.board ? Power.boardTicks : 0, magnet: 0, sneakers: 0, double: 0, fly: 0, descend: 0, flyFrom: 0, flyUp: 0, iframes: 0,
     slow: 0, chaser: 0, friendly: opts.friendly ?? false, streak: 0, lastCoinTick: -1000, nearMisses: 0, combos: 0, boardBreaks: 0, stumbles: 0, pickups: 0,
   };
 }
@@ -178,6 +180,8 @@ export function resolvePickup(kind: PickupKind, id: number): Exclude<PickupKind,
   return all[id % all.length];
 }
 
+const ease = (u: number): number => { const v = Math.max(0, Math.min(1, u)); return v * v * (3 - 2 * v); };
+
 export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = ENDLESS_PACE, boost = false): RunnerState {
   if (prev.crashed) return prev;
   const s: RunnerState = { ...prev }; // `collected` is shared with prev until something is picked up (copy on write)
@@ -218,7 +222,8 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
   if (s.fly > 0) {
     s.fly = Math.max(0, s.fly - (boost ? Power.flyBoostDrain : 1)); // fuel
     s.vy = 0;
-    s.y = Math.min(Power.flyHeight, s.y + (Power.flyHeight - s.floor) / Power.flyRiseTicks);
+    s.flyUp = Math.min(Power.flyRiseTicks, s.flyUp + 1);
+    s.y = s.flyFrom + (Power.flyHeight - s.flyFrom) * ease(s.flyUp / Power.flyRiseTicks);
     if (s.fly === 0) { // time is up: pick a clear lane and start the descent
       s.lane = pickLandingLane(track, s.lane, s.z, speed * Power.flyBoostSpeed);
       s.descend = Power.flyDescendTicks;
@@ -226,7 +231,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     }
   } else if (s.descend > 0) {
     s.descend -= 1;
-    s.y -= Power.flyHeight / Power.flyDescendTicks;
+    s.y = Math.max(s.floor, Power.flyHeight * ease(s.descend / Power.flyDescendTicks));
   } else if (s.y > s.floor || s.vy > 0) {
     s.vy -= Runner.gravity * Runner.dt;
     s.y += s.vy * Runner.dt;
@@ -305,7 +310,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
       case 'magnet': s.magnet = Power.magnetTicks; break;
       case 'sneakers': s.sneakers = Power.sneakersTicks; break;
       case 'double': s.double = Power.doubleTicks; break;
-      case 'jetpack': s.fly = Power.flyTicks; s.descend = 0; break;
+      case 'jetpack': s.fly = Power.flyTicks; s.descend = 0; s.flyFrom = s.y; s.flyUp = 0; break;
     }
   }
   return s;

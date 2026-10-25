@@ -139,7 +139,10 @@ function renderPowers(p: PowerHud): void {
     .map(([k, icon]) => `<div class="ring${(p[k] as number) < 0.2 ? ' low' : ''}" style="--p:${Math.round((p[k] as number) * 100)}">${icon}</div>`).join('');
   document.body.classList.toggle('lightning', p.lightning);
   const fuel = $('fuel');
-  fuel.classList.toggle('hidden', p.fly <= 0);
+  const showFuel = p.fly > 0 || p.landing > 0;
+  if (showFuel && fuel.classList.contains('hidden')) { fuel.classList.add('pop'); setTimeout(() => fuel.classList.remove('pop'), 450); }
+  fuel.classList.toggle('hidden', !showFuel);
+  $('fuel-label').textContent = p.fly > 0 ? 'JETPACK' : 'LANDING';
   fuel.classList.toggle('low', p.fly < 0.2);
   $('fuel-fill').style.width = `${Math.round(p.fly * 100)}%`;
   const land = $('landing');

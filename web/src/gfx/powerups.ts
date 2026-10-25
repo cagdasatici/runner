@@ -51,9 +51,19 @@ function makePickup(kind: PickupKind): THREE.Group {
     case 'mystery':
       g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshLambertMaterial({ map: glyph('?', '#7e22ce') })));
       break;
-    case 'jetpack':
-      for (const x of [-0.2, 0.2]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.7, 12), lambert(col)); c.position.x = x; g.add(c); const f = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 10), lambert(0xfb923c, 0xea580c)); f.position.set(x, -0.5, 0); f.rotation.x = Math.PI; g.add(f); }
+    case 'jetpack': {
+      g.scale.setScalar(1.3);
+      const tankMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, metalness: 0.75, roughness: 0.22, emissive: 0x7f1d1d, emissiveIntensity: 0.6 });
+      for (const x of [-0.19, 0.19]) {
+        const c = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.45, 4, 12), tankMat); c.position.x = x; g.add(c);
+        const f = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 10), new THREE.MeshBasicMaterial({ color: 0xfde047 })); f.position.set(x, -0.5, 0); f.rotation.x = Math.PI; g.add(f);
+      }
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.08, 0.14), lambert(0xe2e8f0)));
+      const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.32, 6, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+      beacon.position.y = 3.2;
+      g.add(beacon);
       break;
+    }
   }
   return g;
 }
@@ -71,7 +81,7 @@ export class PowerVisuals {
   constructor() {
     this.ring.visible = false;
     this.ring.rotation.x = Math.PI / 2;
-    this.group.add(this.board.group, this.board.fx, this.ring, this.chaser.group);
+    this.group.add(this.board.group, this.board.fx, this.ring, this.chaser.group, this.jetpack.trail.points);
   }
 
   /** Keeps the pickups in the scene in step with the track, and poses the extras around the runner. */
@@ -283,6 +293,67 @@ export class BoardVisual {
   }
 }
 
+/** Soft smoke puffs left behind the jetpack: a ring buffer of points in world space (hot orange at the nozzle, grey-white later). */
+export class SmokeTrail {
+  readonly points: THREE.Points;
+  private static readonly N = 220;
+  private static readonly LIFE = 1.2;
+  private pos = new Float32Array(SmokeTrail.N * 3);
+  private lifeA = new Float32Array(SmokeTrail.N);
+  private sizeA = new Float32Array(SmokeTrail.N);
+  private vel = new Float32Array(SmokeTrail.N * 3);
+  private age = new Float32Array(SmokeTrail.N).fill(SmokeTrail.LIFE);
+  private next = 0;
+
+  constructor() {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    geo.setAttribute('aLife', new THREE.BufferAttribute(this.lifeA, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(this.sizeA, 1));
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      vertexShader: `attribute float aLife; attribute float aSize; varying float vLife;
+        void main() { vLife = aLife; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * (300.0 / -mv.z); gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying float vLife;
+        void main() {
+          float vAlpha = vLife * 0.55;
+          float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, r) * vAlpha;
+          vec3 c = mix(vec3(1.0, 0.75, 0.35), vec3(0.85, 0.88, 0.92), smoothstep(0.0, 0.25, 1.0 - vLife));
+          gl_FragColor = vec4(c, a);
+        }`,
+    });
+    this.points = new THREE.Points(geo, mat);
+    this.points.frustumCulled = false;
+  }
+
+  emit(x: number, y: number, z: number): void {
+    const i = this.next;
+    this.next = (this.next + 1) % SmokeTrail.N;
+    this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z;
+    this.vel[i * 3] = (Math.random() - 0.5) * 0.6;
+    this.vel[i * 3 + 1] = -0.6 - Math.random() * 0.6;
+    this.vel[i * 3 + 2] = 0.8 + Math.random() * 0.8;
+    this.age[i] = 0;
+    this.sizeA[i] = 0.35;
+    this.lifeA[i] = 1;
+  }
+
+  update(dt: number): void {
+    const damp = Math.exp(-dt * 1.5);
+    for (let i = 0; i < SmokeTrail.N; i++) {
+      if (this.age[i] >= SmokeTrail.LIFE) { this.lifeA[i] = 0; continue; }
+      this.age[i] += dt;
+      for (let k = 0; k < 3; k++) { this.pos[i * 3 + k] += this.vel[i * 3 + k] * dt; this.vel[i * 3 + k] *= damp; }
+      this.sizeA[i] += dt * 1.4;
+      this.lifeA[i] = Math.max(0, 1 - this.age[i] / SmokeTrail.LIFE);
+    }
+    const g = this.points.geometry;
+    g.attributes.position.needsUpdate = true;
+    g.attributes.aLife.needsUpdate = true;
+    g.attributes.aSize.needsUpdate = true;
+  }
+}
+
 export class JetpackVisual {
   /** Attach to the pitched pivot of the runner. */
   readonly group = new THREE.Group();
@@ -291,10 +362,12 @@ export class JetpackVisual {
   private t = 0;
   private emit = 0;
   private tmp = new THREE.Vector3();
+  readonly trail = new SmokeTrail();
+  private trailAcc = 0;
 
   constructor() {
     const tank = new THREE.CapsuleGeometry(0.1, 0.34, 4, 12);
-    const body = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.4, roughness: 0.35 });
+    const body = new THREE.MeshStandardMaterial({ color: 0xdc2626, metalness: 0.75, roughness: 0.22 });
     const metal = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.7, roughness: 0.3 });
     const strap = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.06, 0.1), new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.8 }));
     strap.position.set(0, 0.05, 0);
@@ -315,6 +388,12 @@ export class JetpackVisual {
       const core = new THREE.Mesh(coreGeo, additive(0xfef08a, 0.95));
       core.position.set(x, -0.24, 0);
       t.castShadow = true;
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 20), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(x, -0.24, 0);
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.12), metal);
+      fin.position.set(x + Math.sign(x) * 0.11, 0.0, 0);
+      this.group.add(ring, fin);
       this.flames.push(flame);
       this.cores.push(core);
       this.group.add(t, cap, nozzle, flame, core);
@@ -329,6 +408,14 @@ export class JetpackVisual {
 
   update(on: boolean, dt: number, glow: ParticlePool): void {
     this.group.visible = on;
+    if (on) {
+      this.trailAcc += dt * 30; // 30 per nozzle = 60 particles/s
+      while (this.trailAcc >= 1) {
+        this.trailAcc -= 1;
+        for (const x of [-0.14, 0.14]) { this.group.localToWorld(this.tmp.set(x, -0.3, 0)); this.trail.emit(this.tmp.x, this.tmp.y, this.tmp.z); }
+      }
+    } else this.trailAcc = 0;
+    this.trail.update(dt);
     if (!on) return;
     this.t += dt;
     for (let i = 0; i < 2; i++) {

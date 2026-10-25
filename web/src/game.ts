@@ -85,7 +85,7 @@ function forcePose(s: RunnerState, pose: string): RunnerState {
     case 'slide': v.slideTicks = 72 - Math.floor((performance.now() / 8.33) % 72); break; // repeating roll
     case 'jump': v.y = 0.9; v.vy = 2; break;
     case 'crash': v.crashed = true; break;
-    case 'fly': v.fly = 500; v.y = 5.5; break;
+    case 'fly': v.fly = 500; v.y = 4.4; v.flyUp = 108; break;
     case 'board': v.board = 3000; break;
     case 'stumble': v.stumbles += 1; break;
     case 'chaser': v.chaser = 240; break;
@@ -435,9 +435,11 @@ export class Game {
     }
     this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
-    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 24 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
-    this.camY += (s.floor * 0.7 - this.camY) * Math.min(1, this.frameDt * 5); // glide up with the roof
+    const flyingNow = s.fly > 0 || s.descend > 0;
+    const camTarget = flyingNow ? s.y * 0.72 : s.floor * 0.7;
+    this.camY += (camTarget - this.camY) * Math.min(1, this.frameDt * (flyingNow ? 2.6 : 5)); // flight: slow, floaty follow
     let sx = 0, sy = 0;
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - this.frameDt);

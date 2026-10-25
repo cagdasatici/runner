@@ -115,25 +115,43 @@ describe('near miss and combo (friendly mode)', () => {
 
 describe('jetpack', () => {
   const t = () => Track.fixed([train(0, 1, 60, 30)], [], [pickup(5, 'jetpack', 1, 8)]);
-  it('lifts off over 0.5 s, flies above the trains for 6 s, collecting air coins', () => {
+  it('lifts off over 0.9 s, flies above the trains for 6 s, collecting air coins', () => {
     const coins = [{ id: 9, lane: 1, z: 30, y: Power.flyHeight + 0.9 }];
     const track = Track.fixed([train(0, 1, 60, 30)], coins, [pickup(5, 'jetpack', 1, 8)]);
     let s = run(track, startState(), 400, undefined, (r) => r.fly > 0);
     expect(isFlying(s)).toBe(true);
-    s = run(track, s, 61);
+    s = run(track, s, Power.flyRiseTicks + 1);
     expect(s.y).toBe(Power.flyHeight);
     s = run(track, s, 1000, undefined, (r) => r.z > 70 || r.fly === 0);
     expect(s.crashed).toBe(false); // flew over the train
     expect(s.collected.has(9)).toBe(true);
   });
+  it('lift-off is eased', () => {
+    let s: RunnerState = { ...startState(), fly: Power.flyTicks, flyFrom: 0, flyUp: 0 };
+    const ys = [0];
+    for (let i = 0; i < 60; i++) { s = step(s, 'none', Track.fixed([])); ys.push(s.y); }
+    expect((ys[10] - ys[0]) / 10).toBeLessThan((ys[60] - ys[50]) / 10);
+  });
+  it('landing is eased and ends on the ground', () => {
+    let s: RunnerState = { ...startState(), fly: 1, y: Power.flyHeight, flyUp: Power.flyRiseTicks, z: 30 };
+    let n = 0, maxDrop = 0;
+    do {
+      const y0 = s.y;
+      s = step(s, 'none', Track.fixed([]));
+      maxDrop = Math.max(maxDrop, y0 - s.y);
+      n++;
+    } while ((s.fly > 0 || s.descend > 0) && n < 1000);
+    expect(s.y).toBe(0);
+    expect(maxDrop).toBeLessThanOrEqual(Power.flyHeight / Power.flyDescendTicks * 1.6);
+  });
   it('timers of other power-ups pause while flying', () => {
-    const s0 = { ...startState(), fly: 600, magnet: 1000, y: Power.flyHeight };
+    const s0 = { ...startState(), fly: 600, magnet: 1000, y: Power.flyHeight, flyUp: Power.flyRiseTicks, flyFrom: 0 };
     const s = run(Track.fixed([]), s0, 300);
     expect(s.magnet).toBe(1000);
   });
   it('lands in a clear lane and is invulnerable for 1.5 s after touchdown, never an unfair death', () => {
     const track = Track.fixed([train(0, 1, 40, 200)]); // the middle lane is a long train
-    const s0 = { ...startState(), fly: 2, y: Power.flyHeight, lane: 1, x: 0, z: 30 };
+    const s0 = { ...startState(), fly: 2, y: Power.flyHeight, flyUp: Power.flyRiseTicks, flyFrom: 0, lane: 1, x: 0, z: 30 };
     let s = run(track, s0, 5); // flight ends
     expect(s.descend).toBeGreaterThan(0);
     expect(s.lane).not.toBe(1);
@@ -144,7 +162,7 @@ describe('jetpack', () => {
   });
   it('fuel lasts 6 s normally and 3.5 s with boost', () => {
     const burn = (boost: boolean) => {
-      let s: RunnerState = { ...startState(), fly: Power.flyTicks, y: Power.flyHeight };
+      let s: RunnerState = { ...startState(), fly: Power.flyTicks, y: Power.flyHeight, flyUp: Power.flyRiseTicks, flyFrom: 0 };
       let n = 0;
       while (s.fly > 0 && n < 5000) { s = step(s, 'none', Track.fixed([]), undefined, boost); n++; }
       return n / 120;
@@ -153,7 +171,7 @@ describe('jetpack', () => {
     expect(burn(true)).toBeCloseTo(3.5, 1);
   });
   it('boosted flight is much faster than boosted ground running', () => {
-    const f = step({ ...startState(), fly: 500, y: Power.flyHeight }, 'none', Track.fixed([]), undefined, true);
+    const f = step({ ...startState(), fly: 500, y: Power.flyHeight, flyUp: Power.flyRiseTicks, flyFrom: 0 }, 'none', Track.fixed([]), undefined, true);
     const g = step(startState(), 'none', Track.fixed([]), undefined, true);
     expect(f.z).toBeGreaterThan(g.z * 1.5);
   });
