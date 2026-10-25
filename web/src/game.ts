@@ -12,6 +12,7 @@ import { RunnerFigure } from './gfx/character';
 import { characterById, loadCharacter } from './gfx/characters';
 import { CoinRenderer } from './gfx/coins';
 import { PowerVisuals } from './gfx/powerups';
+import { MagnetEffect } from './gfx/magnet';
 import { ParticlePool } from './gfx/effects';
 import { GoldenStarRenderer } from './gfx/goldStars';
 import { createMaterials, type Materials } from './gfx/materials';
@@ -25,7 +26,9 @@ export type Quality = 'low' | 'high';
 const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 2048, LOW_SHADOW = 512;
 
 const VIEW_AHEAD = 115;
-const CELEBRATE_SECONDS = 1.2; // the runner jogs on past the finish line before the results card
+const CELEBRATE_SECONDS = 2.8; // fireworks + celebration after the finish line, then the results card
+const COAST_SECONDS = 1.0;      // the runner jogs on past the line, then stops to celebrate
+const FIREWORK_COLORS = [0xf472b6, 0x60a5fa, 0xfde047, 0x4ade80, 0xfb923c, 0xc084fc];
 
 export interface GameEvents {
   onScore(score: number, coins: number): void;
@@ -38,6 +41,8 @@ export interface GameEvents {
   onStreak?: (n: number) => void;
   onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
+  /** The runner just crossed the finish line (start the finish fanfare here). */
+  onFinishLine?(run: LevelRun): void;
   onSpeed?(mps: number): void; // runner speed every frame (drives the adaptive music)
   onPower(p: PowerHud): void;
   onToast(text: string): void;
@@ -120,7 +125,9 @@ export class Game {
   private stars = new GoldenStarRenderer();
   private finishArch: THREE.Group | null = null;
   private dust = new ParticlePool(160, false);
-  private glow = new ParticlePool(400, true);
+  private glow = new ParticlePool(900, true);
+  private magnet = new MagnetEffect();
+  private fireworkTimer = 0;
   private segments = new Map<number, THREE.Group>();
   private obstacleNodes = new Map<number, THREE.Group>();
   private play: Play | null = null;
@@ -171,7 +178,7 @@ export class Game {
     this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
     this.figure.preloadAll();
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points, this.sparkles.points, this.confetti.points);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -296,7 +303,7 @@ export class Game {
           if (play.over) { this.setBoost(false); break; }
         }
         if (ticks === 8) this.acc = 0;
-      } else if (play.level?.finished && this.finishT < CELEBRATE_SECONDS) {
+      } else if (play.level?.finished && this.finishT < COAST_SECONDS) {
         for (let i = 0; i < Math.round(dt / Runner.dt); i++) play.level.coast();
       }
       this.sync();
@@ -363,9 +370,11 @@ export class Game {
           this.finishT = 0;
           this.glow.burst(s.x, 2.5, -level.level.finishZ, 120, { color: 0xfde047, speed: 6, life: 0.9, size: 0.3, gravity: 4, colorJitter: 0.8 });
           this.confetti.burst(0, 6, -level.level.finishZ, 220, { color: 0xffffff, palette: [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xffffff], speed: 7, life: 1.8, size: 0.34, gravity: 5, dir: [0, 0.7, 0.3], spread: 1.2 });
+          this.events.onFinishLine?.(level);
         }
         const before = this.finishT;
         this.finishT += dt;
+        this.fireworks(s.x, -s.z, dt);
         if (before < CELEBRATE_SECONDS && this.finishT >= CELEBRATE_SECONDS) this.events.onFinish(level);
       }
     }
@@ -398,6 +407,21 @@ export class Game {
     }
   }
 
+  /** Fireworks bursting in the sky behind the runner (as the camera sees it) while it celebrates. */
+  private fireworks(x: number, z: number, dt: number): void {
+    if (this.finishT > CELEBRATE_SECONDS) return;
+    this.fireworkTimer -= dt;
+    while (this.fireworkTimer <= 0) {
+      this.fireworkTimer += 0.22 + Math.random() * 0.2;
+      const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+      // ahead of the runner while the camera is behind it, behind the runner once the camera has swung to the front
+      const bz = this.finishT < COAST_SECONDS ? z - 8 - Math.random() * 10 : z + 6 + Math.random() * 10;
+      const bx = x + (Math.random() * 2 - 1) * 6, by = 5 + Math.random() * 4;
+      this.glow.burst(bx, by, bz, 70, { color, speed: 5.5, life: 1.1, size: 0.34, gravity: 2.5, colorJitter: 0.25 });
+      this.glow.burst(bx, by, bz, 14, { color: 0xffffff, speed: 1.5, life: 0.35, size: 0.5 }); // bright core flash
+    }
+  }
+
   /** Makes scene objects match the run: adds new things, removes passed or collected ones. */
   private sync(): void {
     const p = this.play!, s = p.state, track = p.track;
@@ -424,18 +448,31 @@ export class Game {
             const v = new THREE.Vector3(laneX(c.lane), coinY(c), -c.z).project(this.camera);
             this.events.onCoinFly((v.x * 0.5 + 0.5) * window.innerWidth, (-v.y * 0.5 + 0.5) * window.innerHeight);
           }
-          this.coins.pop(c);
-          this.glow.burst(laneX(c.lane), coinY(c), -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
-          this.sparkles.burst(laneX(c.lane), coinY(c), -c.z, 6, { color: 0xffffff, speed: 2.5, life: 0.5, size: 0.34 });
+          // a magnet-pulled coin is drawn at the runner when the core collects it: pop it there
+          const far = this.magnet.level > 0 && Math.abs(laneX(c.lane) - s.x) > 0.6;
+          const px = far ? s.x : laneX(c.lane), py = far ? s.y + 1 : coinY(c);
+          if (far) this.coins.popAt(px, py, -c.z, c.id); else this.coins.pop(c);
+          this.glow.burst(px, py, -c.z, 16, { color: 0xfde047, speed: 3.5, life: 0.35, size: 0.16 });
+          this.sparkles.burst(px, py, -c.z, 6, { color: 0xffffff, speed: 2.5, life: 0.5, size: 0.34 });
         }
       } else visible.push(c);
     }
-    this.coins.update(visible, this.time, this.frameDt);
+    this.magnet.update(s.magnet > 0 && !s.crashed, s.x, s.y, -s.z, this.time, this.frameDt);
+    const ms = this.magnet.level;
+    this.coins.update(visible, this.time, this.frameDt, ms > 0 ? {
+      x: s.x, y: s.y + 1, z: -s.z, strength: ms, arrive: Power.magnetRadius,
+      onStream: (x, y, z, t) => {
+        if (Math.random() < 0.35 * t) this.glow.burst(x, y, z, 1, { color: 0xfde68a, speed: 0.6, life: 0.4, size: 0.14, colorJitter: 0.3 });
+      },
+    } : undefined);
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
     const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
     this.power.update(vs, track.pickups, this.time, VIEW_AHEAD, this.frameDt, this.glow);
     this.figure.pose(vs, this.frameDt, speedOf(s, p.pace));
+    const celebrating = !!p.level?.finished && this.finishT >= COAST_SECONDS;
+    // Optional hook owned by gfx/character.ts; guarded so this compiles whether or not it exists yet.
+    if (celebrating) (this.figure as unknown as { celebrate?: (t: number) => void }).celebrate?.(this.finishT - COAST_SECONDS);
     // crash-proof for a moment after landing (or a stumble): the runner blinks
     this.figure.root.visible = !(s.iframes > 0 && !s.crashed && s.fly === 0 && Math.floor(this.time * 14) % 2 === 0);
     if (s.fly > 0 && this.boost && !s.crashed) { // lightning: streaks of light rushing past
@@ -460,6 +497,13 @@ export class Game {
     this.lean = Math.max(-0.05, Math.min(0.05, this.lean));
     this.camX = s.x;
     this.camera.rotation.set(-0.2, 0, this.lean);
+    if (celebrating) {
+      // swing round to the runner's front, close and low, so the celebration fills the frame
+      const k = Math.min(1, (this.finishT - COAST_SECONDS) / 1.0), e = k * k * (3 - 2 * k), a = e * Math.PI;
+      const r = 7.2 - 2.4 * e;
+      this.camera.position.set(s.x + Math.sin(a) * r * 0.6, s.y + 4.0 - 1.8 * e, -s.z + Math.cos(a) * r);
+      this.camera.lookAt(s.x, s.y + 1.0, -s.z);
+    }
     this.env.follow(s.x, -s.z);
   }
 
@@ -483,6 +527,7 @@ export class Game {
     this.coins.update([], 0, 0);
     this.dust.clear();
     this.glow.clear();
+    this.fireworkTimer = 0;
   }
 
   /** If frames are slow (iPad struggling): first drop bloom/grading and shadow resolution, then render fewer pixels. */

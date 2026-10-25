@@ -74,14 +74,11 @@ export class PowerVisuals {
   /** Attach `jetpack.group` to the runner's pivot (see Game). */
   readonly jetpack = new JetpackVisual();
   private nodes = new Map<number, THREE.Group>();
-  private ring = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.05, 8, 32), new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.7 }));
   private chaser = new ChaserBlob();
   private lastBreaks = 0;
 
   constructor() {
-    this.ring.visible = false;
-    this.ring.rotation.x = Math.PI / 2;
-    this.group.add(this.board.group, this.board.fx, this.ring, this.chaser.group, this.jetpack.trail.points);
+    this.group.add(this.board.group, this.board.fx, this.chaser.group, this.jetpack.trail.points);
   }
 
   /** Keeps the pickups in the scene in step with the track, and poses the extras around the runner. */
@@ -110,9 +107,7 @@ export class PowerVisuals {
       this.board.group.visible = ridden && !blink;
       this.jetpack.update(flying && !s.crashed, dt, glow);
     }
-    this.ring.visible = s.magnet > 0;
-    this.ring.position.set(s.x, s.y + 1.0, -s.z);
-    this.ring.scale.setScalar(1 + 0.08 * Math.sin(time * 8));
+    // the magnet's look (field ripples, pulled coins) lives in gfx/magnet.ts, driven from game.ts
     // the chaser runs 3 m behind and drops back as the timer runs out
     const behind = 3 + (1 - Math.min(1, s.chaser / 240)) * 9;
     this.chaser.update(s.chaser > 0 && !s.crashed, dt, s.x, -s.z, behind, s.slow > 0);
