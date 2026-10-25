@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Subway Runner">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2fa8f5"/><stop offset="1" stop-color="#bfe8ff"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe066"/><stop offset="1" stop-color="#f59f00"/>
+    </linearGradient>
+    <clipPath id="card"><rect width="960" height="360" rx="36"/></clipPath>
+  </defs>
+  <g clip-path="url(#card)">
+    <rect width="960" height="360" fill="url(#sky)"/>
+    <!-- city -->
+    <g opacity=".9">
+      <rect x="40" y="170" width="70" height="130" rx="6" fill="#f4c542"/>
+      <rect x="120" y="130" width="60" height="170" rx="6" fill="#ee6c6c"/>
+      <rect x="780" y="140" width="70" height="160" rx="6" fill="#4d9bf0"/>
+      <rect x="860" y="175" width="60" height="125" rx="6" fill="#4fcf8f"/>
+    </g>
+    <!-- tracks -->
+    <polygon points="0,360 0,300 960,300 960,360" fill="#38465a"/>
+    <g fill="#8a5a3a"><rect x="0" y="318" width="960" height="8"/><rect x="0" y="338" width="960" height="8"/></g>
+    <rect x="0" y="296" width="960" height="6" fill="#dfe6ee"/>
+    <!-- coin -->
+    <g transform="translate(130 70)">
+      <circle r="38" fill="url(#coin)" stroke="#c77700" stroke-width="5"/>
+      <circle r="22" fill="none" stroke="#c77700" stroke-width="5" opacity=".55"/>
+    </g>
+    <!-- speed lines -->
+    <g stroke="#fff" stroke-width="6" stroke-linecap="round" opacity=".75">
+      <line x1="60" y1="238" x2="130" y2="238"/><line x1="30" y1="262" x2="110" y2="262"/>
+    </g>
+    <!-- title -->
+    <g font-family="'Arial Rounded MT Bold','Avenir Next','Helvetica Neue',Arial,sans-serif" font-weight="900" text-anchor="middle" font-size="112" stroke-linejoin="round">
+      <text x="486" y="164" fill="#e8590c" stroke="#e8590c" stroke-width="14" transform="translate(0 7)">SUBWAY</text>
+      <text x="480" y="164" fill="#fff" stroke="#fff" stroke-width="4">SUBWAY</text>
+      <text x="486" y="272" fill="#e8590c" stroke="#e8590c" stroke-width="14" transform="translate(0 7)">RUNNER</text>
+      <text x="480" y="272" fill="#fff" stroke="#fff" stroke-width="4">RUNNER</text>
+    </g>
+  </g>
+</svg>
