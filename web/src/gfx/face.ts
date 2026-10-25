@@ -19,7 +19,15 @@ export interface FaceDef {
   /** Eyebrow colour and thickness (fraction of head width). */
   brow: number;
   browThick: number;
+  /**
+   * Optional real-face texture, served from a folder that is deliberately NOT in git (see scripts/deploy-local.sh).
+   * `box` = [x0, y0, x1, y1] of the face in the source picture (hairline to chin, cheek to cheek), `eyeY` = the eye line in that picture.
+   * When the file is missing the hand-built face above is simply kept.
+   */
+  photo?: { url: string; box: [number, number, number, number]; eyeY: number };
 }
+
+export interface FaceHandle { upgrade(): Promise<void> }
 
 const mat = (color: number, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
 
@@ -51,11 +59,11 @@ function rod(a: THREE.Vector3, b: THREE.Vector3, r: number, m: THREE.Material): 
   return mesh;
 }
 
-export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): void {
+export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): FaceHandle | null {
   const headMesh = model.getObjectByName('Adventurer_Head');
   let bone: THREE.Object3D | undefined;
   model.traverse((o) => { if ((o as THREE.Bone).isBone && o.name === 'Head') bone = o; });
-  if (!headMesh || !bone) return;
+  if (!headMesh || !bone) return null;
   wrap.updateMatrixWorld(true);
   model.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.update(); });
 
@@ -74,7 +82,10 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): v
     const hit = ray.intersectObjects(skinMeshes, false)[0];
     return hit ? hit.point.z : skin.min.z + W * 0.04;
   };
-  const add = (m: THREE.Object3D) => { m.updateMatrixWorld(true); bone!.attach(m); };
+  // the hand-built face parts (not the hair), so a real-face texture can replace them
+  const proc: THREE.Object3D[] = [];
+  let tracking = true;
+  const add = (m: THREE.Object3D) => { m.updateMatrixWorld(true); bone!.attach(m); if (tracking) proc.push(m); };
   const put = (m: THREE.Object3D, x: number, y: number, z: number) => { m.position.set(x, y, z); new THREE.Group().add(m); add(m); return m; };
   const ellipsoid = (rx: number, ry: number, rz: number, m: THREE.Material) => { const e = new THREE.Mesh(new THREE.SphereGeometry(1, 18, 12), m); e.scale.set(rx, ry, rz); return e; };
 
@@ -151,6 +162,7 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): v
   }
 
   // --- hair ---
+  tracking = false;
   const hm = mat(face.hair[0], { roughness: 0.8 }), hl = mat(face.hair[1], { roughness: 0.8 });
   const v = (x: number, y: number, z: number) => new THREE.Vector3(cx0 + x * W, eyeY + y * W, zc + z * W);
   if (face.style === 'messy') {
@@ -189,6 +201,7 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): v
   }
 
   // --- glasses: thin round frames on the eye line, arms back to the ears ---
+  tracking = true;
   if (face.glasses) {
     const frame = mat(0xc9ccd4, { roughness: 0.25, metalness: 0.4 });
     const lens = new THREE.MeshStandardMaterial({ color: 0xdff0ff, transparent: true, opacity: 0.16, roughness: 0.05, depthWrite: false });
@@ -206,4 +219,111 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): v
     const bridge = new THREE.Mesh(new THREE.TorusGeometry(W * 0.05, W * 0.009, 6, 12, Math.PI), frame);
     put(bridge, cx0, eyeY + W * 0.035, gz(cx0));
   }
+  if (!face.photo) return null;
+  const photo = face.photo;
+  // the plate follows the head surface: sample it now, while the bind pose is still in place
+  const toBone = bone.matrixWorld.clone().invert(); // vertices go in bone space now: the head bone is scaled up after this runs
+  const PW = W * 0.95, PH = W * 1.02, top0 = eyeY + W * 0.3, G = 20;
+  const zs: number[] = [];
+  for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+    const x = cx0 + (0.5 - i / G) * PW, y = top0 - (j / G) * PH;
+    ray.set(new THREE.Vector3(x, y, skin.min.z - 1), new THREE.Vector3(0, 0, 1));
+    const hit = ray.intersectObjects(skinMeshes, false)[0];
+    zs.push(hit ? hit.point.z : NaN);
+  }
+  // fill misses (edges) from the nearest hit on the same row
+  for (let j = 0; j <= G; j++) {
+    const row = zs.slice(j * (G + 1), (j + 1) * (G + 1)), ok = row.findIndex((z) => !Number.isNaN(z));
+    for (let i = 0; i <= G; i++) {
+      if (!Number.isNaN(row[i])) continue;
+      let best = -1;
+      for (let k = 0; k <= G; k++) if (!Number.isNaN(row[k]) && (best < 0 || Math.abs(k - i) < Math.abs(best - i))) best = k;
+      zs[j * (G + 1) + i] = best >= 0 ? row[best] : skin.min.z + W * 0.1;
+    }
+    void ok;
+  }
+  const raw = zs.slice();
+  // the head mesh is faceted: blur the surface so the plate is a smooth skin, not a crumpled sheet
+  for (let pass = 0; pass < 6; pass++) {
+    const src = zs.slice();
+    for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+      let sum = 0, n = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const jj = j + dj, ii = i + di; if (jj < 0 || jj > G || ii < 0 || ii > G) continue; sum += src[jj * (G + 1) + ii]; n++; }
+      zs[j * (G + 1) + i] = sum / n;
+    }
+  }
+  for (let k = 0; k < zs.length; k++) zs[k] = Math.min(zs[k], raw[k]); // smooth, but never sunk behind the real surface (the nose)
+  return {
+    async upgrade() {
+      const tex = await photoTexture(photo);
+      if (!tex) return;
+      const pos: number[] = [], uv: number[] = [], nor: number[] = [], index: number[] = [];
+      for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+        const q = new THREE.Vector3(cx0 + (0.5 - i / G) * PW, top0 - (j / G) * PH, zs[j * (G + 1) + i] - W * 0.015).applyMatrix4(toBone);
+        pos.push(q.x, q.y, q.z);
+        uv.push(i / G, 1 - j / G); // viewer-left is world +x, which is the photo's left
+        nor.push(0, 0, -1);
+      }
+      for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+        const a = j * (G + 1) + i, b = a + 1, c = a + G + 1, d = c + 1;
+        index.push(a, c, b, b, c, d);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      g.setIndex(index);
+      const plate = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+      for (const o of proc) o.removeFromParent();
+      bone!.add(plate);
+    },
+  };
+}
+
+/** Loads the picture, crops the face and paints it into a soft cartoon: smoothed, a little more colour, feathered oval edge. */
+async function photoTexture(p: NonNullable<FaceDef['photo']>): Promise<THREE.Texture | null> {
+  const img = await new Promise<HTMLImageElement | null>((res) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => res(null);
+    im.src = p.url;
+  });
+  if (!img) return null;
+  const [x0, y0, x1, y1] = p.box, S = 256, w = S, h = Math.round(S * (y1 - y0) / (x1 - x0));
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const c = cv.getContext('2d');
+  if (!c) return null;
+  // shrink then stretch back: removes pores and noise, keeps the shapes of eyes, brows, lips
+  const small = document.createElement('canvas');
+  small.width = Math.round(w * 0.5); small.height = Math.round(h * 0.5);
+  const sc = small.getContext('2d')!;
+  sc.imageSmoothingQuality = 'high';
+  sc.drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, small.width, small.height);
+  // second shrink: a soft, painted look
+  const tiny = document.createElement('canvas');
+  tiny.width = Math.round(w * 0.5); tiny.height = Math.round(h * 0.5);
+  const tc = tiny.getContext('2d')!;
+  tc.imageSmoothingQuality = 'high';
+  tc.drawImage(small, 0, 0, tiny.width, tiny.height);
+  sc.clearRect(0, 0, small.width, small.height);
+  sc.imageSmoothingQuality = 'high';
+  sc.drawImage(tiny, 0, 0, small.width, small.height);
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(small, 0, 0, w, h);
+  const data = c.getImageData(0, 0, w, h), d = data.data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const l = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+    for (let k = 0; k < 3; k++) d[i + k] = Math.max(0, Math.min(255, (l + (d[i + k] - l) * 1.0 - 128) * 1.1 + 128 + 10)); // saturate + contrast
+    const nx = (x / w - 0.5) / 0.5, ny = (y / h - 0.52) / 0.54, r = Math.hypot(nx, ny);
+    const t = Math.max(0, Math.min(1, (1 - r) / 0.22)); // 1 inside, 0 beyond the oval, soft ring between
+    d[i + 3] = Math.round(255 * t * t * (3 - 2 * t));
+  }
+  c.putImageData(data, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  void p.eyeY;
+  return tex;
 }

@@ -7,3 +7,6 @@ GameCore/.swiftpm/
 *.xcworkspace/xcuserdata/
 SubwayRunner.xcodeproj/
 App/Info.plist
+
+# private face pictures: never commit (copied to the server by scripts/deploy-local.sh from $SITE/faces)
+web/public/faces/

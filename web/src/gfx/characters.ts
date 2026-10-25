@@ -71,14 +71,16 @@ export const CHARACTERS: readonly CharacterDef[] = [
   },
   kid('arel', 'Arel', 1.3, {
     bigHead: 1.3,
-    face: { iris: 0x5a3a22, lip: 0xc4695f, smile: 'closed', hair: [0xb08a5a, 0xc9a574], style: 'messy', blush: 0.16, brow: 0x7a5a38, browThick: 0.017 },
+    face: { iris: 0x5a3a22, lip: 0xc4695f, smile: 'closed', hair: [0xb08a5a, 0xc9a574], style: 'messy', blush: 0.16, brow: 0x7a5a38, browThick: 0.017,
+      photo: { url: `${import.meta.env.BASE_URL}faces/arel.jpg`, box: [123, 105, 273, 246], eyeY: 146 } },
     recolor: { Hair: 0xb08a5a, Eyebrows: 0x6b5030, Green: 0x3a9d5d, LightGreen: 0x4fb46f, Brown: 0x334155, Brown2: 0x1e293b },
   }),
   kid('nora', 'Nora', 1.35, {
     bigHead: 1.3,
     // Brown/Brown2 are the trousers: skin-coloured so the legs under the skirt read as bare; Green/LightGreen is the bodice
     recolor: { Hair: 0xa8774c, Eyebrows: 0x7a5a38, Green: 0xf4f4f6, LightGreen: 0xffffff, Brown: 0xf2c9a6, Brown2: 0xe8bb96 },
-    face: { iris: 0x7a5a2c, lip: 0xd9707a, smile: 'open', hair: [0xa8774c, 0xc29566], style: 'long', glasses: true, lashes: true, blush: 0.14, brow: 0x9a7448, browThick: 0.011 },
+    face: { iris: 0x7a5a2c, lip: 0xd9707a, smile: 'open', hair: [0x9c6f45, 0xc29566], style: 'long', glasses: true, lashes: true, blush: 0.14, brow: 0x9a7448, browThick: 0.011,
+      photo: { url: `${import.meta.env.BASE_URL}faces/nora.jpg`, box: [68, 71, 138, 143], eyeY: 92 } },
     extras: ['dress'],
   }),
   {

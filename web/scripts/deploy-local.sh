@@ -9,6 +9,8 @@ if [ "${SKIP_TESTS:-0}" = 1 ]; then echo "Skipping tests (SKIP_TESTS=1)"; else e
 npm run build
 mkdir -p "$SITE/www"
 rsync -a --delete dist/ "$SITE/www/"
+# private face pictures (Arel, Nora) live outside git in $SITE/faces; the build never contains them
+[ -d "$SITE/faces" ] && cp -R "$SITE/faces" "$SITE/www/faces"
 mkdir -p "$SITE/www/support" && cp ../docs/site/*.html "$SITE/www/support/"   # privacy + support pages
 cp scripts/serve-https.mjs "$SITE/serve-https.mjs"
 echo "Deployed to $SITE/www:"

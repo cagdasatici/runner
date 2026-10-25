@@ -148,7 +148,7 @@ export class RunnerFigure {
       model.position.y = -box.min.y;
       if (def.beardless) removeBeard(model, wrap);
       if (def.extras?.length) addHeadExtras(model, wrap, def.extras);
-      if (def.face) addFace(model, wrap, def.face);
+      if (def.face) void addFace(model, wrap, def.face)?.upgrade().catch((e) => { console.warn('face photo failed', e); /* keep the hand-built face */ });
       if (def.bigHead) model.traverse((o) => { if ((o as THREE.Bone).isBone && o.name === 'Head') o.scale.multiplyScalar(def.bigHead!); });
       const mixer = new THREE.AnimationMixer(model);
       const actions = new Map<string, THREE.AnimationAction>();

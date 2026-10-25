@@ -37,7 +37,7 @@ try {
 
   for (const c of chars) {
     await send('Page.navigate', { url: `${base}?char=${c}&debug=1` });
-    await sleep(5000);
+    await sleep(Number(process.env.WAIT ?? 5000));
     await shot(`characters-menu-${c}.png`);
     console.log(c, 'menu', await evaluate(`document.querySelector('canvas#gl') ? 'ok' : 'no canvas'`));
     for (const pose of poses) {
