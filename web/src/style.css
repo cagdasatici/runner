@@ -203,3 +203,12 @@ body.boosting #speedlines { opacity: 1; animation: lines 0.18s linear infinite; 
 .dots { display: flex; gap: 10px; }
 .dots i { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.45); border: 2px solid var(--ink); transition: transform .15s, background .15s; }
 .dots i.on { background: #fde047; transform: scale(1.35); }
+
+/* jetpack fuel gauge: only while flying; big and high-contrast for phones */
+.fuel { position: absolute; left: 50%; top: calc(var(--top, 0px) + 150px); transform: translateX(-50%); width: min(70vw, 320px); display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 22px; background: rgba(15, 23, 42, 0.78); border: 2px solid #fff; color: #fff; font-size: 14px; font-weight: 900; letter-spacing: 1px; z-index: 6; pointer-events: none; }
+.fuel .bar { flex: 1; height: 18px; border-radius: 9px; background: rgba(255, 255, 255, 0.22); overflow: hidden; }
+.fuel .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #22d3ee, #facc15); border-radius: 9px; }
+.fuel.low .bar i { background: #ef4444; }
+.fuel.low { animation: ringpulse 0.5s ease-in-out infinite; }
+body.lightning::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 4; background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255, 255, 255, 0.0) 0deg 5deg, rgba(186, 230, 253, 0.28) 5deg 6deg, rgba(255, 255, 255, 0) 6deg 14deg); -webkit-mask-image: radial-gradient(circle at 50% 45%, transparent 18%, #000 75%); mask-image: radial-gradient(circle at 50% 45%, transparent 18%, #000 75%); animation: lightningspin 0.12s steps(2) infinite; }
+@keyframes lightningspin { 0% { transform: scale(1); } 100% { transform: scale(1.06); } }

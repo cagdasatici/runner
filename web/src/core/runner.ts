@@ -22,7 +22,7 @@ export interface RunnerState {
   magnet: number;
   sneakers: number;
   double: number;
-  fly: number; // ticks of jetpack left
+  fly: number; // fuel of the jetpack left, in ticks (boost burns it faster)
   descend: number; // ticks of landing left
   iframes: number; // ticks of invulnerability left
   slow: number; // ticks of stumble slow-down left
@@ -63,7 +63,9 @@ export const Power = {
   magnetTicks: 1200, // 10 s
   sneakersTicks: 960, // 8 s
   doubleTicks: 1200, // 10 s of 2× coins
-  flyTicks: 960, // 8 s of jetpack
+  flyTicks: 720, // 6 s of fuel at normal speed
+  flyBoostDrain: 720 / 420, // fuel burnt per tick while boosting: the tank lasts 3.5 s
+  flyBoostSpeed: 2.6, // forward speed factor while flying with boost ("lightning"; Boost.factor on the ground)
   flyHeight: 5.5, // feet height while flying: above every roof
   flyRiseTicks: 60, // 0.5 s lift-off
   flyDescendTicks: 96, // 0.8 s landing
@@ -214,11 +216,11 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
   s.x += Math.max(-maxStep, Math.min(maxStep, laneX(s.lane) - s.x));
   const speed = speedAtTick(s.tick, pace) * (s.slow > 0 ? Power.stumbleSlow : 1);
   if (s.fly > 0) {
-    s.fly -= 1;
+    s.fly = Math.max(0, s.fly - (boost ? Power.flyBoostDrain : 1)); // fuel
     s.vy = 0;
     s.y = Math.min(Power.flyHeight, s.y + (Power.flyHeight - s.floor) / Power.flyRiseTicks);
     if (s.fly === 0) { // time is up: pick a clear lane and start the descent
-      s.lane = pickLandingLane(track, s.lane, s.z, speed);
+      s.lane = pickLandingLane(track, s.lane, s.z, speed * Power.flyBoostSpeed);
       s.descend = Power.flyDescendTicks;
       s.iframes = Power.flyDescendTicks + Power.iframesLanding;
     }
@@ -230,7 +232,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     s.y += s.vy * Runner.dt;
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speed * (boost ? Boost.factor : 1) * Runner.dt;
+  s.z += speed * (boost ? (prev.fly > 0 ? Power.flyBoostSpeed : Boost.factor) : 1) * Runner.dt;
   s.tick += 1;
   // land on, or ride up, whatever is under the feet now
   s.floor = floorAt(s.x, s.z, track);

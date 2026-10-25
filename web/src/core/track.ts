@@ -107,5 +107,9 @@ export class Track {
       this.coins.push({ id: this.nextID, lane: coinLane, z: z0 + i * COIN_SPACING });
       this.nextID += 1;
     }
+    // endless mode: a jetpack every 24 rows (no rng draw, so the obstacle sequence is unchanged)
+    if (row >= 12 && row % 24 === 12) {
+      this.pickups.push({ id: this.nextID++, kind: 'jetpack', lane: coinLane, z: z0 + 12 });
+    }
   }
 }

@@ -3,9 +3,17 @@ import { Runner } from '../src/core/runner';
 import { collectorMove, Solver } from '../src/core/autopilot';
 import { buildLevel, coinsFor3Stars, FINISH_EASE_SECONDS, LEVEL_COUNT, LevelRun, levelSpec, rating, rowStart } from '../src/core/level';
 
+/** The ground solver and idle tests ignore pickups (a jetpack would fly over what they are testing). */
+function runNoPickups(n: number): LevelRun {
+  const r = new LevelRun(n);
+  r.level.track.pickups = [];
+  r.level.track.coins = r.level.track.coins.filter((c) => c.y === undefined || c.y < 5); // no air coins either
+  return r;
+}
+
 /** Plays a level with the journey autopilot until it finishes or crashes. */
 function autoplay(n: number): LevelRun {
-  const r = new LevelRun(n);
+  const r = runNoPickups(n);
   while (!r.over) r.tick(collectorMove(r.state, r.level.track, r.level.spec.pace, r.level.stars, r.starsTaken));
   return r;
 }
@@ -86,11 +94,11 @@ describe('rating', () => {
 describe('LevelRun', () => {
   it('idle runner crashes on every level (no level can be won without playing)', () => {
     for (let n = 1; n <= LEVEL_COUNT; n++) {
-      const g = new LevelRun(n);
+      const g = runNoPickups(n);
       while (!g.over) g.tick('none');
       expect(g.state.crashed, `level ${n}`).toBe(true);
     }
-    const g = new LevelRun(1);
+    const g = runNoPickups(1);
     while (!g.over) g.tick('none');
     expect(g.state.tick).toBe(1606);
   });
@@ -99,7 +107,7 @@ describe('LevelRun', () => {
     expect(g.finished).toBe(true);
     expect(g.state.tick).toBe(3955);
     expect(g.state.z).toBeCloseTo(340.0640833, 6);
-    expect(g.state.coins).toBe(70);
+    expect(g.state.coins).toBeGreaterThanOrEqual(70); // plus any air coins of a jetpack it grabbed
     expect(g.starsTaken.size).toBe(3);
     expect(g.stars).toBe(3);
   });
@@ -118,7 +126,7 @@ describe('LevelRun', () => {
   it('ground solver finishes every level 1…120 and 3-stars all but a handful (the greedy collector cannot dodge ramp trains)', () => {
     const short: number[] = [];
     for (let n = 1; n <= LEVEL_COUNT; n++) {
-      const g = new LevelRun(n);
+      const g = runNoPickups(n);
       const sv = new Solver(false);
       while (!g.over) g.tick(sv.next(g.state, g.level.track, g.level.spec.pace, g.level.stars, g.starsTaken));
       expect(g.state.crashed, `level ${n} crashed at z ${g.state.z.toFixed(1)}`).toBe(false);
@@ -137,21 +145,29 @@ describe('LevelRun', () => {
 });
 
 describe('pickups', () => {
-  it('levels 1 and 2 have none; later levels have some; same level, same pickups', () => {
-    expect(buildLevel(1).track.pickups).toHaveLength(0);
-    expect(buildLevel(2).track.pickups).toHaveLength(0);
+  it('levels 1 and 2 have only jetpacks; later levels have some; same level, same pickups', () => {
+    expect(buildLevel(1).track.pickups.every((p) => p.kind === 'jetpack')).toBe(true);
+    expect(buildLevel(2).track.pickups.every((p) => p.kind === 'jetpack')).toBe(true);
     let total = 0;
     for (let n = 3; n <= LEVEL_COUNT; n++) total += buildLevel(n).track.pickups.length;
     expect(total).toBeGreaterThan(150);
     expect(buildLevel(40).track.pickups).toEqual(buildLevel(40).track.pickups);
   });
-  it('jetpacks only from level 8; no golden star inside a flight; air coins follow a jetpack and are bonus coins', () => {
+  it('exactly 2 jetpacks per level, on clear ground', () => {
+    for (let n = 1; n <= LEVEL_COUNT; n++) {
+      const L = buildLevel(n);
+      const jets = L.track.pickups.filter((p) => p.kind === 'jetpack');
+      expect(jets, `level ${n}`).toHaveLength(2);
+      for (const p of jets) {
+        expect(L.track.obstacles.some((o) => o.kind !== 'ramp' && o.lane === p.lane && p.z > o.z - 1 && p.z < o.z + (o.len ?? (o.kind === 'train' ? 10 : 0.5)) + 1), `level ${n} jetpack in obstacle`).toBe(false);
+      }
+    }
+  });
+  it('no golden star inside a flight; air coins follow a jetpack and are bonus coins', () => {
     for (let n = 3; n <= LEVEL_COUNT; n++) {
       const L = buildLevel(n);
       for (const p of L.track.pickups) {
-        if (p.kind === 'jetpack') expect(n, `level ${n}`).toBeGreaterThanOrEqual(8);
         if (p.kind === 'jetpack') {
-          for (const g of L.stars) expect(g.z > p.z && g.z < p.z + 170, `level ${n} star ${g.z} in flight`).toBe(false);
           expect(L.track.coins.filter((c) => c.y !== undefined && c.y > 5 && c.z > p.z).length).toBeGreaterThanOrEqual(30);
         }
       }

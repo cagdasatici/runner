@@ -115,7 +115,7 @@ describe('near miss and combo (friendly mode)', () => {
 
 describe('jetpack', () => {
   const t = () => Track.fixed([train(0, 1, 60, 30)], [], [pickup(5, 'jetpack', 1, 8)]);
-  it('lifts off over 0.5 s, flies above the trains for 8 s, collecting air coins', () => {
+  it('lifts off over 0.5 s, flies above the trains for 6 s, collecting air coins', () => {
     const coins = [{ id: 9, lane: 1, z: 30, y: Power.flyHeight + 0.9 }];
     const track = Track.fixed([train(0, 1, 60, 30)], coins, [pickup(5, 'jetpack', 1, 8)]);
     let s = run(track, startState(), 400, undefined, (r) => r.fly > 0);
@@ -141,6 +141,31 @@ describe('jetpack', () => {
     expect(s.crashed).toBe(false);
     expect(s.y).toBe(0);
     expect(s.iframes).toBeGreaterThan(Power.iframesLanding - 10);
+  });
+  it('fuel lasts 6 s normally and 3.5 s with boost', () => {
+    const burn = (boost: boolean) => {
+      let s: RunnerState = { ...startState(), fly: Power.flyTicks, y: Power.flyHeight };
+      let n = 0;
+      while (s.fly > 0 && n < 5000) { s = step(s, 'none', Track.fixed([]), undefined, boost); n++; }
+      return n / 120;
+    };
+    expect(burn(false)).toBeCloseTo(6, 1);
+    expect(burn(true)).toBeCloseTo(3.5, 1);
+  });
+  it('boosted flight is much faster than boosted ground running', () => {
+    const f = step({ ...startState(), fly: 500, y: Power.flyHeight }, 'none', Track.fixed([]), undefined, true);
+    const g = step(startState(), 'none', Track.fixed([]), undefined, true);
+    expect(f.z).toBeGreaterThan(g.z * 1.5);
+  });
+  it('crashes are ignored for 1.5 s after landing, then count again', () => {
+    const wall = Track.fixed([{ id: 1, kind: 'train', lane: 1, z: 3, len: 5000 } as Obstacle]);
+    let s: RunnerState = { ...startState(), fly: 0, descend: 1, iframes: Power.iframesLanding + 1, y: 0.01, lane: 1 };
+    s = step(s, 'none', wall); // touches down
+    expect(s.descend).toBe(0);
+    for (let i = 0; i < Power.iframesLanding - 3; i++) s = step(s, 'none', wall);
+    expect(s.crashed).toBe(false); // the hurdle is inside the runner, ignored
+    for (let i = 0; i < 20; i++) s = step(s, 'none', wall);
+    expect(s.crashed).toBe(true);
   });
   it('pickLandingLane prefers the current lane when it is clear', () => {
     expect(pickLandingLane(Track.fixed([]), 2, 10, 12)).toBe(2);

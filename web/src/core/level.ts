@@ -2,7 +2,7 @@
 // 3 golden stars and a difficulty that grows with the level number. Pure logic, no DOM.
 import { SplitMix64 } from './rng';
 import { canReach, cloneState, Power, Runner, startState, step, type Move, type Pace, type RunnerState, type StartOptions } from './runner';
-import { COIN_SPACING, COIN_Y, COINS_PER_ROW, FIRST_ROW_Z, OBSTACLE_KINDS, RAMP_LENGTH, ROOF_Y, Track, type Coin, type Obstacle, type ObstacleKind, type Pickup, type PickupKind } from './track';
+import { COIN_SPACING, COIN_Y, COINS_PER_ROW, FIRST_ROW_Z, OBSTACLE_KINDS, obstacleLength, RAMP_LENGTH, ROOF_Y, Track, type Coin, type Obstacle, type ObstacleKind, type Pickup, type PickupKind } from './track';
 
 export const WORLDS = 12;
 export const LEVELS_PER_WORLD = 10;
@@ -20,13 +20,14 @@ export const RAMP_COOLDOWN = 4; // rows after a ramp piece before the next one m
 export const ROOF_COIN_STEP = 4; // metres between roof coins
 
 export const POWER_FIRST_LEVEL = 3; // levels before this have no pickups (level 1 keeps its golden layout)
-export const JETPACK_FIRST_LEVEL = 8;
+export const JETPACKS_PER_LEVEL = 2; // placed on purpose (see buildLevel), not drawn from the pickup weights
 export const PICKUP_OFFSET = 12; // metres after a row's start, in its coin lane, just past the golden star
 export const FLY_STAR_FREE = 170; // no golden star within this distance after a jetpack pickup (flying skips the ground)
+export const JETPACK_STAR_FREE = 75; // a jetpack is placed, if it can be, so that no golden star lies within this distance after it (~one flight)
 export const FLY_TRAIL_COINS = 30; // air coins after a jetpack pickup, 4 m apart
 /** % of rows (from row 3) with a pickup: 10 % at level 3 … 16 % at level 120. */
 export const pickupChance = (n: number): number => (n < POWER_FIRST_LEVEL ? 0 : Math.round(10 + 6 * ((n - 1) / (LEVEL_COUNT - 1))));
-const PICKUP_WEIGHTS: [PickupKind, number][] = [['board', 24], ['magnet', 20], ['sneakers', 14], ['double', 18], ['jetpack', 12], ['mystery', 12]];
+const PICKUP_WEIGHTS: [PickupKind, number][] = [['board', 24], ['magnet', 20], ['sneakers', 14], ['double', 18], ['mystery', 12]];
 
 /** % of eligible rows that start a ramp piece: 0 before level 6, then 10 … 30. */
 export const rampChance = (n: number): number => (n < RAMP_FIRST_LEVEL ? 0 : Math.round(10 + 20 * ((n - 1) / (LEVEL_COUNT - 1))));
@@ -237,7 +238,7 @@ export function buildLevel(n: number): Level {
       if (kind === 'jetpack' || kind === 'mystery') {
         // a mystery box can turn into a jetpack, so both keep the golden stars out of the flight
         const flightEnd = z + FLY_STAR_FREE;
-        if ((n < JETPACK_FIRST_LEVEL || stars.some((g) => g.z > z && g.z < flightEnd) || flightEnd > finishZ - 10 || pieces.some((pc) => rowStart(spec, pc.row) > z - 30 && rowStart(spec, pc.row) < flightEnd))) {
+        if ((stars.some((g) => g.z > z && g.z < flightEnd) || flightEnd > finishZ - 10 || pieces.some((pc) => rowStart(spec, pc.row) > z - 30 && rowStart(spec, pc.row) < flightEnd))) {
           if (kind === 'jetpack') kind = 'magnet'; else continue;
         }
       }
@@ -246,6 +247,36 @@ export function buildLevel(n: number): Level {
       if (kind === 'jetpack' || (kind === 'mystery' && pid % 5 === 4)) {
         for (let k = 0; k < FLY_TRAIL_COINS; k++) coins.push({ id: id++, lane: Math.round(1 + Math.sin(k * 0.45)), z: z + 6 + k * 4, y: Power.flyHeight + COIN_Y });
       }
+    }
+  }
+  // 7. Exactly JETPACKS_PER_LEVEL jetpacks, at ~1/3 and ~2/3 of the level: the closest free row, preferring a flight with no golden star in it.
+  {
+    const finishZ2 = rowStart(spec, spec.rows - 1) + FINISH_AFTER_LAST_ROW;
+    const pieceRows = new Set<number>();
+    for (const pc of pieces) for (let k = 0; k <= 4; k++) pieceRows.add(pc.row + k);
+    const taken = new Set(pickups.map((p) => Math.round(p.z)));
+    const rowOk = (row: number, strict: boolean): boolean => {
+      if (row < 2 || row >= spec.rows - 3) return false;
+      const z = rowStart(spec, row) + PICKUP_OFFSET, flightEnd = z + JETPACK_STAR_FREE;
+      if (taken.has(Math.round(z)) || (strict ? flightEnd > finishZ2 - 10 : z + 40 > finishZ2)) return false;
+      if (obstacles.some((o) => o.kind !== 'ramp' && o.lane === coinLanes[row] && z > o.z - 2 && z < o.z + obstacleLength(o) + 2)) return false;
+      if (strict && pieceRows.has(row)) return false;
+      return !strict || !stars.some((g) => g.z > z && g.z < flightEnd);
+    };
+    for (let j = 1; j <= JETPACKS_PER_LEVEL; j++) {
+      const target = Math.round((spec.rows * j) / (JETPACKS_PER_LEVEL + 1));
+      let placed = -1;
+      for (const strict of [true, false]) {
+        for (let d = 0; d < spec.rows && placed < 0; d++) {
+          for (const row of [target + d, target - d]) if (placed < 0 && rowOk(row, strict)) placed = row;
+        }
+        if (placed >= 0) break;
+      }
+      if (placed < 0) throw new Error(`level ${n}: no room for jetpack ${j}`);
+      const z = rowStart(spec, placed) + PICKUP_OFFSET;
+      taken.add(Math.round(z));
+      pickups.push({ id: id++, kind: 'jetpack', lane: coinLanes[placed], z });
+      for (let k = 0; k < FLY_TRAIL_COINS; k++) coins.push({ id: id++, lane: Math.round(1 + Math.sin(k * 0.45)), z: z + 6 + k * 4, y: Power.flyHeight + COIN_Y });
     }
   }
   const track = Track.fixed(obstacles, coins, pickups);

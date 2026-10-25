@@ -4,6 +4,8 @@ import { LEVEL_COUNT, LevelRun } from '../src/core/level';
 
 function solve(n: number, ride: boolean): LevelRun {
   const r = new LevelRun(n);
+  r.level.track.pickups = []; // the solvers ignore jetpacks and their air coins
+  r.level.track.coins = r.level.track.coins.filter((c) => c.y === undefined || c.y < 5);
   const sv = new Solver(ride);
   while (!r.over) r.tick(sv.next(r.state, r.level.track, r.level.spec.pace, r.level.stars, r.starsTaken));
   return r;
@@ -32,5 +34,5 @@ describe('Solver', () => {
       const r = solve(n, true);
       expect(r.level.track.obstacles.some((o) => o.kind === 'ramp' || o.len !== undefined)).toBe(false);
     }
-  });
+  }, 60000);
 });

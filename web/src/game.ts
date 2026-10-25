@@ -40,7 +40,7 @@ export interface GameEvents {
 }
 
 /** What the HUD needs to draw the power-up rings (fractions 0…1 of the time left) and the landing warning. */
-export interface PowerHud { board: number; magnet: number; sneakers: number; double: number; fly: number; landing: number; chaser: boolean }
+export interface PowerHud { board: number; magnet: number; sneakers: number; double: number; fly: number; landing: number; chaser: boolean; lightning: boolean }
 
 /** What the loop needs from either kind of run. */
 interface Play {
@@ -357,10 +357,10 @@ export class Game {
     }
     const hud: PowerHud = {
       board: s.board / Power.boardTicks, magnet: s.magnet / Power.magnetTicks, sneakers: s.sneakers / Power.sneakersTicks,
-      double: s.double / Power.doubleTicks, fly: s.fly / Power.flyTicks, chaser: s.chaser > 0,
+      double: s.double / Power.doubleTicks, fly: s.fly / Power.flyTicks, chaser: s.chaser > 0, lightning: s.fly > 0 && this.boost,
       landing: s.fly > 0 && s.fly <= Power.flyWarnTicks ? Math.ceil(s.fly / 120) : s.descend > 0 ? 1 : 0,
     };
-    const key = [hud.board, hud.magnet, hud.sneakers, hud.double, hud.fly].map((v) => Math.round(v * 60)).join(',') + `${hud.landing}${hud.chaser}`;
+    const key = [hud.board, hud.magnet, hud.sneakers, hud.double, hud.fly].map((v) => Math.round(v * 60)).join(',') + `${hud.landing}${hud.chaser}${hud.lightning}`;
     if (key !== this.lastHud) { this.lastHud = key; this.events.onPower(hud); }
     const [nm, cb, bb, sb] = this.lastCounters;
     if (s.nearMisses !== nm) this.events.onToast('Close! +25');
@@ -422,9 +422,14 @@ export class Game {
     const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
     this.power.update(vs, track.pickups, this.time, VIEW_AHEAD, this.frameDt, this.glow);
     this.figure.pose(vs, this.frameDt, speedOf(s, p.pace));
+    // crash-proof for a moment after landing (or a stumble): the runner blinks
+    this.figure.root.visible = !(s.iframes > 0 && !s.crashed && s.fly === 0 && Math.floor(this.time * 14) % 2 === 0);
+    if (s.fly > 0 && this.boost && !s.crashed) { // lightning: streaks of light rushing past
+      for (let k = 0; k < 2; k++) this.glow.burst(s.x + (Math.random() - 0.5) * 7, s.y + Math.random() * 4, -s.z - 14 - Math.random() * 8, 1, { color: k ? 0xfde047 : 0x67e8f9, speed: 1, life: 0.25, size: 0.22, dir: [0, 0, 1], spread: 0.1 });
+    }
     this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
-    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + 12 * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 24 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
     this.camY += (s.floor * 0.7 - this.camY) * Math.min(1, this.frameDt * 5); // glide up with the roof
     let sx = 0, sy = 0;

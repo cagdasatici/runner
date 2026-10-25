@@ -137,6 +137,11 @@ const RING_ICONS: [keyof PowerHud, string][] = [['board', 'ðŸ›¹'], ['magnet', 'ð
 function renderPowers(p: PowerHud): void {
   $('powers').innerHTML = RING_ICONS.filter(([k]) => (p[k] as number) > 0)
     .map(([k, icon]) => `<div class="ring${(p[k] as number) < 0.2 ? ' low' : ''}" style="--p:${Math.round((p[k] as number) * 100)}">${icon}</div>`).join('');
+  document.body.classList.toggle('lightning', p.lightning);
+  const fuel = $('fuel');
+  fuel.classList.toggle('hidden', p.fly <= 0);
+  fuel.classList.toggle('low', p.fly < 0.2);
+  $('fuel-fill').style.width = `${Math.round(p.fly * 100)}%`;
   const land = $('landing');
   land.classList.toggle('hidden', p.landing === 0);
   land.textContent = p.landing > 0 ? `LANDING ${p.landing}` : '';
@@ -161,6 +166,7 @@ const runOptions = () => ({ board: startBoard, friendly: true });
 
 function show(s: typeof screen): void {
   screen = s;
+  if (s !== 'hud') { $('fuel').classList.add('hidden'); document.body.classList.remove('lightning'); }
   if (s === 'menu' || s === 'map') { $('powers').innerHTML = ''; $('landing').classList.add('hidden'); }
   $('menu').classList.toggle('hidden', s !== 'menu');
   $('map').classList.toggle('hidden', s !== 'map');
