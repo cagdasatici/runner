@@ -15,6 +15,9 @@ const FADE = 0.14; // seconds of cross-fade between clips
 const AIR_TIME = 0.6; // jump airtime: 2 * jumpVelocity / gravity
 const BOARD_LIFT = 0.17; // the runner stands on the hoverboard deck
 const STUMBLE_TIME = 0.55;
+const SLIDE_PHASE = 0.3; // fraction of the Run clip frozen during a slide: one leg forward, one back
+const SLIDE_LEAN = 1.15; // rad the humanoid leans back during a slide (feet first, head behind)
+const SLIDE_LIFT = 0.12; // m the pivot rises so the heel does not sink into the track
 
 /** Run state plus the power-up fields the core may carry (all optional). */
 type FigureState = RunnerState & { board?: number; fly?: number; stumbles?: number };
@@ -172,7 +175,6 @@ export class RunnerFigure {
     const board = (s.board ?? 0) > 0 && key !== 'crash' && (s.fly ?? 0) <= 0 && ((s as { descend?: number }).descend ?? 0) <= 0;
     this.rig.position.set(s.x, s.y + (board ? BOARD_LIFT : 0), -s.z);
     this.rig.rotation.z = Math.max(-0.35, Math.min(0.35, -(laneX(s.lane) - s.x) * 0.18));
-    if (key === 'slide' && s.slideTicks > this.lastSlide && this.key === 'slide') this.key = null; // a new roll restarts the clip
     this.lastSlide = s.slideTicks;
     this.play(e, key, s, speed);
     e.mixer.update(dt);
@@ -180,20 +182,22 @@ export class RunnerFigure {
     // procedural layer: pitch and squash ease toward the target of the current animation
     let pitch = 0, squash = 1, roll = 0;
     const tuck = e.def.slide === 'tuck';
+    const humanoid = e.def.id === 'adventurer';
     // crouch: squash toward the feet and lean slightly forward; no big pitch, which tipped animals nose-down about their feet
-    if (key === 'slide' && tuck) { pitch = e.def.clips.run === 'Run' && e.def.id === 'adventurer' ? -0.25 : -0.08; squash = 0.6; }
+    if (key === 'slide' && tuck && humanoid) { pitch = SLIDE_LEAN; squash = 1; }
+    else if (key === 'slide' && tuck) { pitch = -0.08; squash = 0.6; }
     else if (key === 'fly') { pitch = -0.95 + Math.sin(this.t * 6) * 0.05; }
     else if (key === 'board') { pitch = -0.1; squash = 0.94; }
     else if (key === 'jump') { squash = s.vy > 0 ? 1.04 : 0.97; }
     if (key === 'stumble' && !e.def.clips.stumble) roll = Math.sin(this.t * 38) * 0.18;
-    const a = dt > 0 ? 1 - Math.exp(-dt * 16) : 1;
+    const a = dt > 0 ? 1 - Math.exp(-dt * (key === 'slide' || this.pitch > 0.3 ? 11 : 16)) : 1;
     this.pitch += (pitch - this.pitch) * a;
     this.squash += (squash - this.squash) * a;
     this.pop = Math.min(1, this.pop + dt * 5);
     const pop = this.pop < 1 ? 1 + Math.sin(this.pop * Math.PI) * 0.12 - (1 - this.pop) * 0.5 : 1;
     this.pivot.rotation.set(this.pitch, 0, roll);
     this.pivot.scale.set(pop, pop * this.squash, pop);
-    this.pivot.position.y = 0;
+    this.pivot.position.y = humanoid ? SLIDE_LIFT * Math.max(0, Math.min(1, this.pitch / SLIDE_LEAN)) : 0;
     this.setShadow(s.x, s.y, -s.z, e.footprint);
   }
 
@@ -235,6 +239,7 @@ export class RunnerFigure {
       next.clampWhenFinished = once;
       if (prev && prev !== next) { prev.fadeOut(FADE); next.fadeIn(FADE); } else next.fadeIn(0.05);
       next.play();
+      if (key === 'slide' && !clips.slide && e.def.id === 'adventurer') next.time = next.getClip().duration * SLIDE_PHASE;
       this.key = key;
       this.action = next;
     }
@@ -243,7 +248,7 @@ export class RunnerFigure {
     switch (key) {
       case 'run': rate = e.def.runSpeed * (speed / Runner.startSpeed); break;
       case 'jump': rate = clips.jump === clips.run ? 0.3 : dur / AIR_TIME; break;
-      case 'slide': rate = clips.slide ? dur / (Runner.slideDuration * Runner.dt) : e.def.runSpeed * 1.4; break;
+      case 'slide': rate = clips.slide ? dur / (Runner.slideDuration * Runner.dt) : e.def.id === 'adventurer' ? 0 : e.def.runSpeed * 1.4; break;
       case 'crash': rate = Math.max(1, dur / 0.6); break;
       case 'stumble': rate = clips.stumble ? dur / STUMBLE_TIME : e.def.runSpeed; break;
       case 'fly': rate = clips.fly === clips.run ? 0.2 : 0.8; break;

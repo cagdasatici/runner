@@ -345,7 +345,7 @@ window.addEventListener('pointerup', endSwipe);
 window.addEventListener('pointercancel', endSwipe);
 // keyboard for testing on a computer
 const keys: Record<string, Move> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', a: 'left', d: 'right', w: 'up', s: 'down' };
-window.addEventListener('keydown', (e) => { if (e.key === ' ' && screen === 'hud') { e.preventDefault(); game.setBoost(true); return; } const m = keys[e.key]; if (m) { e.preventDefault(); game.queue(m); } });
+window.addEventListener('keydown', (e) => { if (e.key === ' ' && screen === 'hud') { e.preventDefault(); game.setBoost(true); return; } const m = keys[e.key]; if (m) { e.preventDefault(); if (e.repeat) return; game.queue(m); } });
 window.addEventListener('keyup', (e) => { if (e.key === ' ') game.setBoost(false); });
 window.addEventListener('blur', releaseBoost);
 // iPad Safari: block pinch-zoom, double-tap zoom and the context menu; only the map may scroll
