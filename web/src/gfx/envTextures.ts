@@ -1,8 +1,14 @@
 // Procedural textures for the themed environment: sky, skyline backdrop, facades, the vehicle trim sheet, particles.
-// Everything is drawn once with Canvas 2D (no downloaded art), kept small (<= 1024 px) and shared.
+// Everything is drawn once with Canvas 2D (no downloaded art), kept small (<= 2048 px) and shared.
 import * as THREE from 'three';
 import type { Theme } from './themes';
-import { canvas, hex, getMaxAnisotropy, noise, roundRect, texture } from './textures';
+import { canvas as rawCanvas, hex, getMaxAnisotropy, noise, roundRect, texture } from './textures';
+
+/** Draws in logical w x h units onto a canvas with 2x the pixels (capped at 2048) so edges stay crisp in HD. */
+function canvas(w: number, h: number, draw: (c: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+  const k = Math.min(2, 2048 / Math.max(w, h));
+  return rawCanvas(Math.round(w * k), Math.round(h * k), (c) => { c.scale(k, k); draw(c); });
+}
 
 const mix = (a: number, b: number, t: number): number => {
   const r = Math.round(((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t);

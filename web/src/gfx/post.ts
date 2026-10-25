@@ -1,4 +1,4 @@
-// Cheap post-processing: scene → MSAA target, bright-pass + blur at 1/4 resolution, then ONE full-screen composite
+// Cheap post-processing: scene → MSAA target, bright-pass + blur at 1/2 resolution, then ONE full-screen composite
 // (bloom add, colour grading per theme). Costs ~3 tiny passes + 1 full-screen pass; the quality tier can switch it off.
 import * as THREE from 'three';
 import type { Theme } from './themes';
@@ -25,8 +25,9 @@ void main() {
 }`;
 
 const COMPOSITE = `
-uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast;
+uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform vec2 texel;
 varying vec2 vUv;
+vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec3 c = texture2D(scene, vUv).rgb + texture2D(bloom, vUv).rgb * strength;
   c *= tint;
@@ -35,6 +36,13 @@ void main() {
   c = (c - 0.5) * contrast + 0.5;
   vec2 d = vUv - 0.5;
   c *= 1.0 - 0.32 * dot(d, d) * 2.0;
+  if (hd > 0.5) {
+    vec3 blurN = (texture2D(scene, vUv + vec2(texel.x, 0.0)).rgb + texture2D(scene, vUv - vec2(texel.x, 0.0)).rgb
+               + texture2D(scene, vUv + vec2(0.0, texel.y)).rgb + texture2D(scene, vUv - vec2(0.0, texel.y)).rgb) * 0.25;
+    c += (c - blurN) * 0.35;
+    c = aces(max(c, 0.0) * 1.2);
+    float vig = smoothstep(1.15, 0.35, length(vUv - 0.5) * 1.4); c *= mix(0.82, 1.0, vig);
+  }
   gl_FragColor = vec4(max(c, 0.0), 1.0);
   #include <colorspace_fragment>
 }`;
@@ -59,7 +67,7 @@ export class PostFx {
     this.blur = mk(BLUR, { src: { value: null }, dir: { value: new THREE.Vector2() } });
     this.comp = mk(COMPOSITE, {
       scene: { value: null }, bloom: { value: null }, strength: { value: 0.3 }, tint: { value: new THREE.Vector3(1, 1, 1) },
-      sat: { value: 1 }, contrast: { value: 1 },
+      sat: { value: 1 }, contrast: { value: 1 }, hd: { value: 1 }, texel: { value: new THREE.Vector2() },
     });
     this.quad = new THREE.Mesh(tri, this.bright);
     this.quad.frustumCulled = false;
@@ -73,7 +81,8 @@ export class PostFx {
   resize(): void {
     const s = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     this.rt.setSize(s.x, s.y);
-    const w = Math.max(2, s.x >> 2), h = Math.max(2, s.y >> 2);
+    (this.comp.uniforms.texel.value as THREE.Vector2).set(1 / s.x, 1 / s.y);
+    const w = Math.max(2, s.x >> 1), h = Math.max(2, s.y >> 1); // half-res bloom (post only runs on the high tier)
     for (const t of this.small) t.setSize(w, h);
   }
 

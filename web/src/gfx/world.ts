@@ -19,6 +19,7 @@ const SHADOW_BOX = 14;
 export class Environment {
   readonly sun = new THREE.DirectionalLight(0xffffff, 2.5);
   readonly hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5);
+  readonly rim = new THREE.DirectionalLight(0xbfe3ff, 0.55); // cool back light so silhouettes pop; no shadows
   private backdrop: THREE.Mesh;
   private backdropMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, fog: false });
   private skyTex: THREE.Texture | null = null;
@@ -39,6 +40,8 @@ export class Environment {
     this.sun.shadow.bias = -0.0005;
     this.sun.shadow.normalBias = 0.03;
     scene.add(this.sun, this.sun.target);
+    this.rim.castShadow = false;
+    scene.add(this.rim);
     this.backdrop = new THREE.Mesh(new THREE.PlaneGeometry(460, 78), this.backdropMat);
     this.backdrop.renderOrder = -1;
     this.backdrop.frustumCulled = false;
@@ -73,6 +76,7 @@ export class Environment {
     this.hemi.color.setHex(t.hemi.sky);
     this.hemi.groundColor.setHex(t.hemi.ground);
     this.hemi.intensity = t.hemi.intensity;
+    this.rim.intensity = 0.55 * (t.hemi.intensity / 1.5);
     this.sun.color.setHex(t.sun.color);
     this.sun.intensity = t.sun.intensity;
     this.backdropMat.map?.dispose();
@@ -88,6 +92,9 @@ export class Environment {
     const tx = Math.round(x / texel) * texel, tz = Math.round((sceneZ - 6) / texel) * texel;
     this.sun.target.position.set(tx, 0, tz);
     this.sun.position.set(tx + 6.1, 16.3, tz + 9.9);
+    this.rim.position.set(tx - 4, 6, tz + 10);
+    this.rim.target.position.set(tx, 0, tz);
+    this.rim.target.updateMatrixWorld();
   }
 
   /** The skyline plane stays far in front of the camera (behind it for the menu camera, which looks back along +z). */

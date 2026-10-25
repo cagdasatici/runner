@@ -6,7 +6,7 @@ import type { RunnerState } from '../core/runner';
 import type { ParticlePool } from './effects';
 import { dotTexture } from './textures';
 
-const lambert = (color: number, emissive = 0x000000) => new THREE.MeshLambertMaterial({ color, emissive });
+const lambert = (color: number, emissive = 0x000000) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: 0.5, metalness: 0.3, roughness: 0.35 });
 const glyph = (text: string, bg: string): THREE.CanvasTexture => {
   const c = document.createElement('canvas');
   c.width = c.height = 128;

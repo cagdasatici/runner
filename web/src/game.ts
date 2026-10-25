@@ -21,7 +21,7 @@ import { ENDLESS_THEME, MENU_THEME, themeForWorld, type Theme } from './gfx/them
 import { disposeGroup, Environment, makeFinishArch, makeObstacle, makeSegment, SEGMENT_LENGTH } from './gfx/world';
 
 export type Quality = 'low' | 'high';
-const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 1536, LOW_SHADOW = 512;
+const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 2048, LOW_SHADOW = 512;
 
 const VIEW_AHEAD = 115;
 const CELEBRATE_SECONDS = 1.2; // the runner jogs on past the finish line before the results card
