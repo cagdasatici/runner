@@ -10,6 +10,9 @@ import { animFor, characterById, CHARACTERS, type AnimKey, type CharacterDef } f
 import type { Materials } from './materials';
 import { PrimitiveFigure } from './primitiveFigure';
 import { dotTexture } from './textures';
+import { fitClearance } from './clearance';
+import { MalteseFigure, type ProceduralRig, type ProcKey } from './maltese';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 const FADE = 0.14; // seconds of cross-fade between clips
 const AIR_TIME = 0.6; // jump airtime: 2 * jumpVelocity / gravity
@@ -17,7 +20,6 @@ const BOARD_LIFT = 0.17; // the runner stands on the hoverboard deck
 const STUMBLE_TIME = 0.55;
 const SLIDE_PHASE = 0.3; // fraction of the Run clip frozen during a slide: one leg forward, one back
 const SLIDE_LEAN = 1.15; // rad the humanoid leans back during a slide (feet first, head behind)
-const SLIDE_LIFT = 0.12; // m the pivot rises so the heel does not sink into the track
 
 /** Run state plus the power-up fields the core may carry (all optional). */
 type FigureState = RunnerState & { board?: number; fly?: number; stumbles?: number };
@@ -28,7 +30,14 @@ interface Entry {
   mixer: THREE.AnimationMixer;
   actions: Map<string, THREE.AnimationAction>;
   footprint: number; // half-length of the shadow blob
+  proc?: ProceduralRig; // code-animated character (no clips)
+  bones: { head?: THREE.Object3D; tails: THREE.Object3D[]; arms: THREE.Object3D[] };
 }
+
+const CELEBRATE_HOP = 2.2; // hops per second
+const ARM_AXIS = 'x'; // UpperArm.L/R bones of the adventurer rig: local x swings the arm forward and up
+const ARM_UP = -3.5; // tuned from screenshots: arms overhead
+const _box = new THREE.Box3();
 
 const ONCE: ReadonlySet<AnimKey> = new Set(['jump', 'slide', 'crash', 'stumble']);
 const loader = new GLTFLoader();
@@ -100,6 +109,17 @@ export class RunnerFigure {
   private async load(def: CharacterDef): Promise<Entry | null> {
     const have = this.entries.get(def.id);
     if (have) return have;
+    if (def.procedural) {
+      const fig = new MalteseFigure();
+      const wrap = new THREE.Group();
+      wrap.add(fig.root);
+      fig.animate('idle', 0, 0, 0);
+      const box = new THREE.Box3().setFromObject(fig.root);
+      wrap.scale.setScalar(def.height / Math.max(0.01, box.max.y - box.min.y));
+      const entry: Entry = { def, model: wrap, mixer: new THREE.AnimationMixer(wrap), actions: new Map(), footprint: 0.6, proc: fig, bones: { tails: [], arms: [] } };
+      this.entries.set(def.id, entry);
+      return entry;
+    }
     try {
       const gltf = await loadGltf(import.meta.env.BASE_URL + def.model);
       const again = this.entries.get(def.id);
@@ -111,6 +131,7 @@ export class RunnerFigure {
         if (!mesh.isMesh) return;
         mesh.castShadow = true;
         mesh.frustumCulled = false; // skinned bounds are unreliable
+        mesh.geometry = smoothGeometry(mesh.geometry);
         const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         mesh.material = Array.isArray(mesh.material) ? mats.map((x) => this.prepMaterial(x, def)) : this.prepMaterial(mats[0], def);
       });
@@ -126,7 +147,14 @@ export class RunnerFigure {
       const mixer = new THREE.AnimationMixer(model);
       const actions = new Map<string, THREE.AnimationAction>();
       for (const clip of gltf.animations) actions.set(clip.name, mixer.clipAction(clip));
-      const entry: Entry = { def, model: wrap, mixer, actions, footprint: Math.max(0.5, (box.max.z - box.min.z) * k * 0.55) };
+      const bones: Entry['bones'] = { tails: [], arms: [] };
+      model.traverse((o) => {
+        if (!(o as THREE.Bone).isBone) return;
+        if (o.name === 'Head') bones.head = o;
+        else if (/^Tail\d*$/.test(o.name)) bones.tails.push(o);
+        else if (/^UpperArm\.?[LR]$/.test(o.name) /* GLTFLoader strips the dot: UpperArmL */) bones.arms.push(o);
+      });
+      const entry: Entry = { def, model: wrap, mixer, actions, footprint: Math.max(0.5, (box.max.z - box.min.z) * k * 0.55), bones };
       this.entries.set(def.id, entry);
       return entry;
     } catch (err) {
@@ -176,15 +204,20 @@ export class RunnerFigure {
     this.rig.position.set(s.x, s.y + (board ? BOARD_LIFT : 0), -s.z);
     this.rig.rotation.z = Math.max(-0.35, Math.min(0.35, -(laneX(s.lane) - s.x) * 0.18));
     this.lastSlide = s.slideTicks;
+    this.unnudge();
     this.play(e, key, s, speed);
     e.mixer.update(dt);
+    const phase = (s.z / 2.4) * 2 * Math.PI;
+    e.proc?.animate(key, this.t, phase, s.vy);
+    this.secondary(e, key, phase);
 
     // procedural layer: pitch and squash ease toward the target of the current animation
     let pitch = 0, squash = 1, roll = 0;
     const tuck = e.def.slide === 'tuck';
     const humanoid = e.def.id === 'adventurer';
     // crouch: squash toward the feet and lean slightly forward; no big pitch, which tipped animals nose-down about their feet
-    if (key === 'slide' && tuck && humanoid) { pitch = SLIDE_LEAN; squash = 1; }
+    if (key === 'slide' && e.proc) { pitch = 0; squash = 1; } // the rig has its own belly-down crawl
+    else if (key === 'slide' && tuck && humanoid) { pitch = SLIDE_LEAN; squash = 1; }
     else if (key === 'slide' && tuck) { pitch = -0.08; squash = 0.6; }
     else if (key === 'fly') { pitch = -0.95 + Math.sin(this.t * 6) * 0.05; }
     else if (key === 'board') { pitch = -0.1; squash = 0.94; }
@@ -197,8 +230,86 @@ export class RunnerFigure {
     const pop = this.pop < 1 ? 1 + Math.sin(this.pop * Math.PI) * 0.12 - (1 - this.pop) * 0.5 : 1;
     this.pivot.rotation.set(this.pitch, 0, roll);
     this.pivot.scale.set(pop, pop * this.squash, pop);
-    this.pivot.position.y = humanoid ? SLIDE_LIFT * Math.max(0, Math.min(1, this.pitch / SLIDE_LEAN)) : 0;
+    this.pivot.position.y = 0;
+    if (key === 'slide') this.fitUnderBar(e);
     this.setShadow(s.x, s.y, -s.z, e.footprint);
+  }
+
+  /**
+   * Crawl fix shared by every character: measures the posed mesh and squashes/lifts the pivot so nothing sinks
+   * below the track and the top stays under the slide hitbox (see clearance.ts). Runs only while sliding.
+   */
+  private fitUnderBar(e: Entry): void {
+    for (let i = 0; i < 2; i++) { // second pass: a pitched pivot scales along its own axis, so re-measure once
+      this.measure(e);
+      const base = this.rig.position.y + this.pivot.position.y;
+      const { f } = fitClearance(_box.min.y - base, _box.max.y - base);
+      this.pivot.scale.y *= f;
+    }
+    this.measure(e);
+    const lo = _box.min.y - this.rig.position.y;
+    this.pivot.position.y = Math.max(0, -lo);
+  }
+
+  private measure(e: Entry): void {
+    this.root.updateMatrixWorld(true);
+    e.model.traverse((o) => { if ((o as THREE.SkinnedMesh).isSkinnedMesh) (o as THREE.SkinnedMesh).skeleton.update(); });
+    _box.setFromObject(e.model, true);
+  }
+
+  /** Secondary motion on top of the clips: tail wag, head bob. Deltas are undone before the next mixer update. */
+  private secondary(e: Entry, key: ProcKey, phase: number): void {
+    if (e.proc) return;
+    const wagSpeed = key === 'celebrate' ? 26 : key === 'run' ? 14 : 6;
+    const wagAmp = key === 'crash' ? 0 : key === 'celebrate' ? 0.5 : 0.25;
+    e.bones.tails.forEach((b, i) => this.nudge(b, 'y', Math.sin(this.t * wagSpeed - i * 0.6) * wagAmp / (1 + i * 0.3)));
+    if (e.bones.head && key === 'run') this.nudge(e.bones.head, 'x', Math.sin(phase * 2) * 0.06);
+  }
+
+  private nudges: Array<[THREE.Object3D, 'x' | 'y' | 'z', number]> = [];
+  private nudge(o: THREE.Object3D, axis: 'x' | 'y' | 'z', v: number): void {
+    o.rotation[axis] += v;
+    this.nudges.push([o, axis, v]);
+  }
+  /** Undo last frame's additive bone rotations (bones without an animation track would otherwise accumulate). */
+  private unnudge(): void {
+    for (const [o, axis, v] of this.nudges) o.rotation[axis] -= v;
+    this.nudges.length = 0;
+  }
+
+  /**
+   * Finish-line celebration. `t` = seconds since the finish line was crossed; call every frame instead of pose().
+   * Humanoids throw both arms up, hop and spin once; animals hop and wag; the Maltese hops, rears up and wags.
+   * Pass the run state to keep the figure where the runner is (otherwise it stays where it was last posed).
+   */
+  celebrate(t: number, dt = 0, state?: RunnerState): void {
+    const e = this.current;
+    if (state) { this.rig.position.set(state.x, state.y, -state.z); this.setShadow(state.x, state.y, -state.z, e?.footprint ?? 0.8); }
+    this.rig.rotation.set(0, 0, 0);
+    if (!e) return;
+    this.t += dt;
+    this.unnudge();
+    if (this.key !== 'idle') {
+      const idle = e.actions.get(e.def.clips.idle ?? '');
+      if (idle) {
+        this.action?.fadeOut(FADE);
+        idle.reset().setLoop(THREE.LoopRepeat, Infinity).setEffectiveTimeScale(1.4).fadeIn(FADE).play();
+        this.action = idle;
+      }
+      this.key = 'idle';
+    }
+    e.mixer.update(dt);
+    e.proc?.animate('celebrate', t, 0, 0);
+    this.secondary(e, 'celebrate', 0);
+    const up = Math.min(1, t / 0.25); // ease the arms up
+    e.bones.arms.forEach((b) => this.nudge(b, ARM_AXIS, ARM_UP * up));
+    const hop = e.proc ? 0 : Math.abs(Math.sin(t * Math.PI * CELEBRATE_HOP)) * 0.35;
+    const spinT = Math.min(1, t / 0.9);
+    const spin = spinT * spinT * (3 - 2 * spinT) * Math.PI * 2; // one smooth full turn
+    this.pitch = 0; this.squash = 1;
+    this.pivot.rotation.set(0, spin, 0);
+    this.pivot.scale.setScalar(1);
+    this.pivot.position.y = hop;
   }
 
   /** Menu preview: the selected character idling at the origin, turning gently towards the camera. */
@@ -264,5 +375,18 @@ export class RunnerFigure {
     this.shadow.position.set(x, 0.03, z);
     this.shadow.scale.set(size * 1.1 * k, size * 1.6 * k, 1);
     (this.shadow.material as THREE.MeshBasicMaterial).opacity = 0.4 * k;
+  }
+}
+
+/** Welds the low-poly faces (glTF exports split vertices per face) and recomputes normals: smooth shading. */
+function smoothGeometry(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  try {
+    const src = g.clone();
+    src.deleteAttribute('normal');
+    const merged = mergeVertices(src, 1e-4);
+    merged.computeVertexNormals();
+    return merged;
+  } catch {
+    return g; // unexpected attribute layout: keep the original faceted mesh
   }
 }

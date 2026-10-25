@@ -20,6 +20,8 @@ export interface CharacterDef {
   yaw: number;
   /** Speed of the run clip at 10 m/s (1 = as authored). */
   runSpeed: number;
+  /** Built in code instead of loaded from `model` (no clips; animated by the procedural rig). */
+  procedural?: 'maltese';
 }
 
 const animal = (id: string, name: string, height: number, extra: Partial<CharacterDef> = {}): CharacterDef => ({
@@ -40,6 +42,11 @@ export const CHARACTERS: readonly CharacterDef[] = [
     clips: { run: 'Run', jump: 'Jump_Loop', crash: 'Death', idle: 'Idle', fly: 'Jump_Loop', board: 'Idle' },
   }),
   animal('fox', 'Rusty', 1.4),
+  {
+    id: 'maltese', name: 'Bella', model: '', procedural: 'maltese', height: 1.1, slide: 'tuck', yaw: 0, runSpeed: 1.2,
+    // clip names are only labels here: the procedural rig animates every key itself
+    clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
+  },
 ];
 
 export const DEFAULT_CHARACTER = CHARACTERS[0].id;

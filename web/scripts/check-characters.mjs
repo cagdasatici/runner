@@ -14,8 +14,8 @@ const port = 9337;
 const proc = spawn(chrome, ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const chars = process.env.ONLY ? [process.env.ONLY] : ['adventurer', 'shiba', 'cat', 'fox'];
-const poses = (process.env.POSES ?? 'run,jump,slide,crash,fly,board,stumble').split(',');
+const chars = process.env.ONLY ? [process.env.ONLY] : ['adventurer', 'shiba', 'cat', 'fox', 'maltese'];
+const poses = (process.env.POSES ?? 'run,jump,slide,crash,fly,board,stumble,celebrate').split(',');
 
 try {
   let target;
