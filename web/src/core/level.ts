@@ -27,7 +27,7 @@ export const JETPACK_STAR_FREE = 75; // a jetpack is placed, if it can be, so th
 export const FLY_TRAIL_COINS = 30; // air coins after a jetpack pickup, 4 m apart
 /** % of rows (from row 3) with a pickup: 10 % at level 3 … 16 % at level 120. */
 export const pickupChance = (n: number): number => (n < POWER_FIRST_LEVEL ? 0 : Math.round(10 + 6 * ((n - 1) / (LEVEL_COUNT - 1))));
-const PICKUP_WEIGHTS: [PickupKind, number][] = [['board', 24], ['magnet', 20], ['sneakers', 14], ['double', 18], ['mystery', 12]];
+const PICKUP_WEIGHTS: [PickupKind, number][] = [['board', 24], ['magnet', 45], ['sneakers', 14], ['double', 18], ['mystery', 12]];
 
 /** % of eligible rows that start a ramp piece: 0 before level 6, then 10 … 30. */
 export const rampChance = (n: number): number => (n < RAMP_FIRST_LEVEL ? 0 : Math.round(10 + 20 * ((n - 1) / (LEVEL_COUNT - 1))));
@@ -68,7 +68,7 @@ export function levelSpec(n: number): LevelSpec {
     world: Math.floor((n - 1) / LEVELS_PER_WORLD) + 1,
     inWorld,
     seed: BigInt(7919 * n + 104729),
-    rows: 14 + Math.round(30 * t) + (inWorld === 10 ? 4 : 0),
+    rows: Math.round((14 + 30 * t) * 1.3) + (inWorld === 10 ? 5 : 0), // 30 % longer than the original 14…44 rows
     rowGap: r1(22 - 5 * t),
     twoChance: Math.round(10 + 45 * t),
     trainChance: Math.round(10 + 40 * t),
@@ -317,7 +317,10 @@ export class LevelRun {
     this.state = step(this.state, move, this.level.track, this.level.spec.pace, boost);
     if (this.state.crashed) return;
     for (const g of this.level.stars) if (!this.starsTaken.has(g.id) && canReach(this.state, g.lane, g.z)) this.starsTaken.add(g.id);
-    if (this.state.z >= this.level.finishZ) this.finished = true;
+    if (this.state.z >= this.level.finishZ) {
+      this.finished = true;
+      this.state.iframes = 0; // no landing-protection flashing past the finish line
+    }
   }
 
   get stars(): number {
@@ -335,6 +338,7 @@ export class LevelRun {
     this.coastTicks += 1;
     s.slideTicks = 0;
     s.vy = 0;
+    s.iframes = 0;
     const k = Math.min(1, (this.coastTicks * Runner.dt) / FINISH_EASE_SECONDS);
     s.y = this.coastY0 * (1 - k * k * (3 - 2 * k));
     s.z += this.level.spec.pace.max * 0.6 * Runner.dt;

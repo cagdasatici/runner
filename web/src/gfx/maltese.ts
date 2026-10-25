@@ -1,4 +1,4 @@
-// "Bella", a Maltese dog built procedurally (no model file): white long fluffy coat, black button nose and eyes,
+// "Bella" (and senior "Toby"), a Maltese dog built procedurally (no model file): white long fluffy coat, black button nose and eyes,
 // a topknot with a pink bow. Faces -z, paws on y = 0, ~1.1 m tall at the topknot (game scale, like the other animals).
 // Animated entirely in code: gallop, jump, crawl (belly down), crash, idle, celebrate (hop + tail wag).
 import * as THREE from 'three';
@@ -56,8 +56,10 @@ export class MalteseFigure implements ProceduralRig {
   private tongue: THREE.Mesh;
   private lids: THREE.Mesh[] = [];
 
-  constructor() {
-    const fur = new THREE.MeshPhysicalMaterial({ color: 0xfbf8f1, roughness: 0.92, sheen: 1, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xfff4e0) });
+  /** senior: "Toby", a 13-year-old male: creamier coat, no bow, a blue collar with a tag. */
+  constructor(opts: { senior?: boolean } = {}) {
+    const senior = opts.senior ?? false;
+    const fur = new THREE.MeshPhysicalMaterial({ color: senior ? 0xf6f0e4 : 0xfbf8f1, roughness: 0.92, sheen: 1, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xfff4e0) });
     const furShade = new THREE.MeshPhysicalMaterial({ color: 0xefe8da, roughness: 0.95, sheen: 0.8, sheenColor: new THREE.Color(0xffffff) });
     const black = new THREE.MeshStandardMaterial({ color: 0x0b0b0f, roughness: 0.18, metalness: 0 });
     const shine = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -113,14 +115,24 @@ export class MalteseFigure implements ProceduralRig {
       h.add(e);
       this.ears.push(e);
     }
-    // topknot with a pink bow
-    h.add(mk(fluffGeo(0.08, 7, 0.3, 20, 14), fur, 0, 0.27, 0.0, 1, 1.4, 1));
-    for (const x of [-1, 1]) {
-      const loop = mk(new THREE.ConeGeometry(0.06, 0.12, 16), pink, 0.065 * x, 0.25, -0.02);
-      loop.rotation.z = (Math.PI / 2) * x;
-      h.add(loop);
+    if (senior) {
+      // blue collar with a gold tag around the neck ruff
+      const blue = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.5 });
+      const gold = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35, metalness: 0.3 });
+      const collar = mk(new THREE.TorusGeometry(0.2, 0.03, 10, 32), blue, 0, 0.2, -0.38);
+      collar.rotation.x = Math.PI / 2 - 0.5;
+      this.body.add(collar);
+      this.body.add(mk(new THREE.CylinderGeometry(0.045, 0.045, 0.012, 16), gold, 0, 0.06, -0.55, 1, 1, 1).rotateX(Math.PI / 2));
+    } else {
+      // topknot with a pink bow
+      h.add(mk(fluffGeo(0.08, 7, 0.3, 20, 14), fur, 0, 0.27, 0.0, 1, 1.4, 1));
+      for (const x of [-1, 1]) {
+        const loop = mk(new THREE.ConeGeometry(0.06, 0.12, 16), pink, 0.065 * x, 0.25, -0.02);
+        loop.rotation.z = (Math.PI / 2) * x;
+        h.add(loop);
+      }
+      h.add(mk(new THREE.SphereGeometry(0.03, 12, 8), pink, 0, 0.25, -0.03));
     }
-    h.add(mk(new THREE.SphereGeometry(0.03, 12, 8), pink, 0, 0.25, -0.03));
 
     // plumed tail curled up over the back
     this.tail.position.set(0, 0.2, 0.48);

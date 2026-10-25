@@ -110,7 +110,7 @@ export class RunnerFigure {
     const have = this.entries.get(def.id);
     if (have) return have;
     if (def.procedural) {
-      const fig = new MalteseFigure();
+      const fig = new MalteseFigure({ senior: def.procedural === 'maltese-senior' });
       const wrap = new THREE.Group();
       wrap.add(fig.root);
       fig.animate('idle', 0, 0, 0);
@@ -126,6 +126,7 @@ export class RunnerFigure {
       if (again) return again;
       const model = SkeletonUtils.clone(gltf.scene) as THREE.Group;
       model.rotation.y = def.yaw;
+      for (const name of def.hide ?? []) model.getObjectByName(name)?.removeFromParent();
       model.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (!mesh.isMesh) return;
@@ -144,6 +145,8 @@ export class RunnerFigure {
       const k = def.height / Math.max(0.01, box.max.y - box.min.y);
       wrap.scale.setScalar(k);
       model.position.y = -box.min.y;
+      if (def.beardless) removeBeard(model, wrap);
+      if (def.extras?.length) addHeadExtras(model, wrap, def.extras);
       const mixer = new THREE.AnimationMixer(model);
       const actions = new Map<string, THREE.AnimationAction>();
       for (const clip of gltf.animations) actions.set(clip.name, mixer.clipAction(clip));
@@ -167,6 +170,8 @@ export class RunnerFigure {
     const mat = src.clone() as THREE.MeshStandardMaterial;
     if ('metalness' in mat) { mat.metalness = 0; mat.roughness = Math.max(0.65, mat.roughness); }
     if (def.tint !== undefined && mat.color) mat.color.multiply(new THREE.Color(def.tint));
+    const re = def.recolor?.[src.name];
+    if (re !== undefined && mat.color) mat.color.set(re);
     return mat;
   }
 
@@ -389,4 +394,66 @@ function smoothGeometry(g: THREE.BufferGeometry): THREE.BufferGeometry {
   } catch {
     return g; // unexpected attribute layout: keep the original faceted mesh
   }
+}
+
+/** Builds glasses / long hair in world space around the bind-pose head mesh, then parents them to the Head bone. */
+function addHeadExtras(model: THREE.Group, wrap: THREE.Group, extras: NonNullable<CharacterDef['extras']>): void {
+  const headMesh = model.getObjectByName('Adventurer_Head');
+  let bone: THREE.Object3D | undefined;
+  model.traverse((o) => { if ((o as THREE.Bone).isBone && o.name === 'Head') bone = o; });
+  if (!headMesh || !bone) return;
+  wrap.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(headMesh, true);
+  const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const w = size.x, h = size.y, front = box.min.z; // the model faces -z
+  // built in world units on an unscaled scratch parent, then attach() keeps that world transform under the bone
+  const place = (m: THREE.Object3D, x: number, y: number, z: number) => { m.position.set(x, y, z); new THREE.Group().add(m); m.updateMatrixWorld(true); bone!.attach(m); };
+  if (extras.includes('longHair')) {
+    const hairMat = new THREE.MeshStandardMaterial({ color: 0x8a5530, roughness: 0.75 });
+    const back = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.42, h * 0.75, 8, 20), hairMat);
+    back.scale.set(1.15, 1, 0.55);
+    back.castShadow = true;
+    place(back, c.x, box.min.y + h * 0.15, c.z + size.z * 0.28);
+    for (const sx of [-1, 1]) {
+      const side = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.13, h * 0.6, 6, 12), hairMat);
+      side.castShadow = true;
+      place(side, c.x + sx * w * 0.47, box.min.y + h * 0.2, c.z - size.z * 0.05);
+    }
+  }
+  if (extras.includes('glasses')) {
+    const frame = new THREE.MeshStandardMaterial({ color: 0xc9a28f, roughness: 0.3 });
+    const g = new THREE.Group();
+    const r = w * 0.13, eyeY = box.min.y + h * 0.42;
+    for (const sx of [-1, 1]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.24, 8, 24), frame);
+      ring.position.x = sx * r * 1.2;
+      g.add(ring);
+    }
+    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.12, r * 0.12, r * 0.5, 6), frame);
+    bridge.rotation.z = Math.PI / 2;
+    g.add(bridge);
+    place(g, c.x, eyeY, front - r * 0.1);
+  }
+}
+
+/** Drops the Hair triangles on the lower front of the face (the beard), measured on the bind pose in world space. */
+function removeBeard(model: THREE.Group, wrap: THREE.Group): void {
+  const head = model.getObjectByName('Adventurer_Head');
+  if (!head) return;
+  wrap.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(head, true);
+  const cutY = box.min.y + (box.max.y - box.min.y) * 0.5, midZ = (box.min.z + box.max.z) / 2;
+  head.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (!mesh.isMesh || (mesh.material as THREE.Material).name !== 'Hair') return;
+    const g = mesh.geometry, pos = g.attributes.position as THREE.BufferAttribute;
+    const idx = g.index ? Array.from(g.index.array) : Array.from({ length: pos.count }, (_, i) => i);
+    const v = new THREE.Vector3(), keep: number[] = [];
+    for (let t = 0; t < idx.length; t += 3) {
+      let y = 0, z = 0;
+      for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, idx[t + k]); mesh.applyBoneTransform?.(idx[t + k], v); v.applyMatrix4(mesh.matrixWorld); y += v.y / 3; z += v.z / 3; }
+      if (!(y < cutY && z < midZ)) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    }
+    g.setIndex(keep);
+  });
 }

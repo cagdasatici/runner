@@ -23,12 +23,12 @@ describe('animFor', () => {
 });
 
 describe('registry', () => {
-  it('has five unique characters with the clips the game needs', () => {
-    expect(CHARACTERS.map((c) => c.id)).toEqual(['adventurer', 'shiba', 'cat', 'fox', 'maltese']);
+  it('has eight unique characters with the clips the game needs', () => {
+    expect(CHARACTERS.map((c) => c.id)).toEqual(['adventurer', 'shiba', 'cat', 'fox', 'maltese', 'arel', 'nora', 'toby']);
     expect(new Set(CHARACTERS.map((c) => c.id)).size).toBe(CHARACTERS.length);
     for (const c of CHARACTERS) {
       if (c.procedural) expect(c.model).toBe('');
-      else expect(c.model).toBe(`models/${c.id}.glb`);
+      else expect(c.model).toMatch(/^models\/[a-z]+\.glb$/); // kids reuse adventurer.glb
       for (const k of ['run', 'jump', 'crash', 'idle'] as const) expect(c.clips[k], `${c.id}.${k}`).toBeTruthy();
       expect(c.height).toBeGreaterThan(0.5);
       if (c.slide === 'clip') expect(c.clips.slide).toBeTruthy();
@@ -38,8 +38,8 @@ describe('registry', () => {
     expect(characterById('cat').name).toBe('Whiskers');
     expect(characterById('nope').id).toBe(DEFAULT_CHARACTER);
     expect(characterById(null).id).toBe(DEFAULT_CHARACTER);
-    expect(stepCharacter('adventurer', -1)).toBe('maltese');
-    expect(stepCharacter('maltese', 1)).toBe('adventurer');
+    expect(stepCharacter('adventurer', -1)).toBe('toby');
+    expect(stepCharacter('toby', 1)).toBe('adventurer');
     expect(stepCharacter('shiba', 1)).toBe('cat');
   });
   it('persists the choice and survives broken storage', () => {

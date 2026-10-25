@@ -24,8 +24,8 @@ describe('LevelSpec', () => {
     expect([1, 10, 11, 120].map((n) => [levelSpec(n).world, levelSpec(n).inWorld])).toEqual([[1, 1], [1, 10], [2, 1], [12, 10]]);
   });
   it('level 1 and level 120 golden values', () => {
-    expect(levelSpec(1)).toEqual({ n: 1, world: 1, inWorld: 1, seed: 112648n, rows: 14, rowGap: 22, twoChance: 10, trainChance: 10, pace: { start: 9, accel: 0.08, max: 12 } });
-    expect(levelSpec(120)).toEqual({ n: 120, world: 12, inWorld: 10, seed: 1055009n, rows: 48, rowGap: 17, twoChance: 55, trainChance: 50, pace: { start: 13, accel: 0.2, max: 20 } });
+    expect(levelSpec(1)).toEqual({ n: 1, world: 1, inWorld: 1, seed: 112648n, rows: 18, rowGap: 22, twoChance: 10, trainChance: 10, pace: { start: 9, accel: 0.08, max: 12 } });
+    expect(levelSpec(120)).toEqual({ n: 120, world: 12, inWorld: 10, seed: 1055009n, rows: 62, rowGap: 17, twoChance: 55, trainChance: 50, pace: { start: 13, accel: 0.2, max: 20 } });
   });
   it('gets harder level by level: never shorter rows, slower pace or fewer trains than the level before (boss levels aside)', () => {
     for (let n = 2; n <= LEVEL_COUNT; n++) {
@@ -36,7 +36,7 @@ describe('LevelSpec', () => {
       expect(b.trainChance, `level ${n}`).toBeGreaterThanOrEqual(a.trainChance);
       expect(b.twoChance, `level ${n}`).toBeGreaterThanOrEqual(a.twoChance);
     }
-    expect(levelSpec(10).rows).toBe(levelSpec(9).rows + 4); // boss level: 4 extra rows
+    expect(levelSpec(10).rows).toBe(levelSpec(9).rows + 5); // boss level: 5 extra rows
   });
   it('rejects levels outside 1…120', () => {
     for (const n of [0, 121, 1.5, NaN]) expect(() => levelSpec(n)).toThrow(RangeError);
@@ -49,10 +49,10 @@ describe('buildLevel', () => {
     expect(L.track.obstacles.slice(0, 6).map((o) => [o.kind, o.lane, o.z])).toEqual([
       ['bar', 0, 40], ['hurdle', 0, 62], ['bar', 0, 84], ['bar', 2, 106], ['hurdle', 1, 128], ['hurdle', 0, 150],
     ]);
-    expect(L.track.obstacles).toHaveLength(14);
-    expect(L.totalCoins).toBe(70);
-    expect(L.finishZ).toBe(340);
-    expect(L.stars).toEqual([{ id: 84, lane: 1, z: 116 }, { id: 85, lane: 2, z: 204 }, { id: 86, lane: 1, z: 292 }]);
+    expect(L.track.obstacles).toHaveLength(18);
+    expect(L.totalCoins).toBe(90);
+    expect(L.finishZ).toBe(428);
+    expect(L.stars).toEqual([{ id: 108, lane: 2, z: 138 }, { id: 109, lane: 1, z: 248 }, { id: 110, lane: 1, z: 380 }]);
   });
   it('same level, same layout', () => {
     expect(buildLevel(77)).toEqual(buildLevel(77));
@@ -105,9 +105,9 @@ describe('LevelRun', () => {
   it('autopilot finishes level 1 with every coin and 3 stars (golden)', () => {
     const g = autoplay(1);
     expect(g.finished).toBe(true);
-    expect(g.state.tick).toBe(3955);
-    expect(g.state.z).toBeCloseTo(340.0640833, 6);
-    expect(g.state.coins).toBeGreaterThanOrEqual(70); // plus any air coins of a jetpack it grabbed
+    expect(g.state.tick).toBe(4843);
+    expect(g.state.z).toBeGreaterThanOrEqual(428);
+    expect(g.state.coins).toBeGreaterThanOrEqual(90); // plus any air coins of a jetpack it grabbed
     expect(g.starsTaken.size).toBe(3);
     expect(g.stars).toBe(3);
   });
@@ -173,5 +173,16 @@ describe('pickups', () => {
       }
       expect(L.totalCoins).toBe(L.track.coins.filter((c) => c.y === undefined).length);
     }
+  });
+});
+
+describe('finish line', () => {
+  it('drops landing protection so the runner stops flashing', () => {
+    const r = new LevelRun(1);
+    r.state.z = r.level.finishZ - 0.01;
+    r.state.iframes = 100;
+    r.tick('none');
+    expect(r.finished).toBe(true);
+    expect(r.state.iframes).toBe(0);
   });
 });

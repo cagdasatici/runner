@@ -21,13 +21,29 @@ export interface CharacterDef {
   /** Speed of the run clip at 10 m/s (1 = as authored). */
   runSpeed: number;
   /** Built in code instead of loaded from `model` (no clips; animated by the procedural rig). */
-  procedural?: 'maltese';
+  procedural?: 'maltese' | 'maltese-senior';
+  /** Replaces the colour of materials by glTF material name (e.g. { Hair: 0x8a5a33 }). */
+  recolor?: Record<string, number>;
+  /** Meshes (by glTF node name) left out of the model. */
+  hide?: string[];
+  /** Extra props built in code and attached to the head bone. */
+  extras?: ('glasses' | 'longHair')[];
+  /** Cuts the beard out of the adventurer's hair mesh (it shares the Hair material). */
+  beardless?: boolean;
 }
 
 const animal = (id: string, name: string, height: number, extra: Partial<CharacterDef> = {}): CharacterDef => ({
   id, name, model: `models/${id}.glb`, height, slide: 'tuck', yaw: Math.PI, runSpeed: 1.15,
   clips: { run: 'Gallop', jump: 'Gallop_Jump', crash: 'Death', idle: 'Idle', stumble: 'Idle_HitReact_Left', fly: 'Gallop_Jump', board: 'Idle' },
   ...extra,
+});
+
+/** A child built on the adventurer model: no backpack, lighter skin, own colours. */
+const kid = (id: string, name: string, height: number, extra: Partial<CharacterDef>): CharacterDef => ({
+  id, name, model: 'models/adventurer.glb', height, slide: 'tuck', yaw: Math.PI, runSpeed: 1.05, hide: ['Backpack'], beardless: true,
+  clips: { run: 'Run', jump: 'Run', crash: 'Death', idle: 'Idle', stumble: 'HitRecieve', fly: 'Run', board: 'Idle' },
+  ...extra,
+  recolor: { Skin: 0xf2c9a6, ...extra.recolor },
 });
 
 export const CHARACTERS: readonly CharacterDef[] = [
@@ -45,6 +61,17 @@ export const CHARACTERS: readonly CharacterDef[] = [
   {
     id: 'maltese', name: 'Bella', model: '', procedural: 'maltese', height: 1.1, slide: 'tuck', yaw: 0, runSpeed: 1.2,
     // clip names are only labels here: the procedural rig animates every key itself
+    clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
+  },
+  kid('arel', 'Arel', 1.3, {
+    recolor: { Hair: 0x9a6a3c, Eyebrows: 0x5a3a20, Green: 0xf4c430, LightGreen: 0xf7d154, Brown: 0x334155, Brown2: 0x1e293b },
+  }),
+  kid('nora', 'Nora', 1.35, {
+    recolor: { Hair: 0x8a5530, Eyebrows: 0x5a3a20, Green: 0xf8f6f0, LightGreen: 0xffffff, Brown: 0x5b7db1, Brown2: 0x4a6a9c },
+    extras: ['longHair', 'glasses'],
+  }),
+  {
+    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1,
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
 ];

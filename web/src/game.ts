@@ -101,6 +101,8 @@ function forcePose(s: RunnerState, pose: string): RunnerState {
   return v;
 }
 
+const MENU_FIG_H = 1.75; // menu framing height (the tallest character), metres
+
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -277,6 +279,21 @@ export class Game {
   get isPlaying(): boolean { return this.mode === 'playing'; }
 
   /** Called every animation frame with performance.now() in ms. */
+  /** Fits the menu character (feet to head + idle bob) into the empty #swipe area between the title chips and the
+   *  picker, so the name below never overlaps it on any screen size. Falls back to a plain 52° view. */
+  private frameMenuFigure(): void {
+    const cam = this.camera;
+    const area = document.getElementById('swipe')?.getBoundingClientRect();
+    const view = this.renderer.domElement.getBoundingClientRect();
+    if (!area || area.height < 40 || view.height < 1) { cam.fov = 52; cam.clearViewOffset(); cam.updateProjectionMatrix(); return; }
+    const d = Math.hypot(cam.position.x, cam.position.y - MENU_FIG_H / 2, cam.position.z);
+    const worldH = (MENU_FIG_H * 1.12 * view.height) / area.height; // 12 % headroom for the pop-in bounce
+    cam.fov = Math.min(80, Math.max(20, (2 * Math.atan(worldH / (2 * d)) * 180) / Math.PI));
+    const centreY = area.top + area.height / 2 - view.top;
+    cam.setViewOffset(view.width, view.height, 0, view.height / 2 - centreY, view.width, view.height);
+    cam.updateProjectionMatrix();
+  }
+
   frame(nowMs: number): void {
     const now = nowMs / 1000;
     const dt = this.last === null ? 0 : Math.min(now - this.last, 0.25);
@@ -288,10 +305,10 @@ export class Game {
       this.figure.menuPose(this.time, dt);
       const a = 0.35 * Math.sin(this.time * 0.3);
       this.camera.position.set(4.4 * Math.sin(a), 1.7, -6.0 * Math.cos(a));
-      this.camera.fov = 52;
-      this.camera.updateProjectionMatrix();
-      this.camera.lookAt(0, 0.7, 0);
+      this.frameMenuFigure();
+      this.camera.lookAt(0, MENU_FIG_H / 2, 0);
     } else if (this.play) {
+      if (this.camera.view?.enabled) this.camera.clearViewOffset();
       const play = this.play;
       if (!play.over) {
         this.acc += dt;
