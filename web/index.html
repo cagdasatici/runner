@@ -72,12 +72,15 @@
     </section>
 
     <section id="results" class="screen hidden">
-      <div class="rcard">
+      <div id="r-confetti" class="confetti" aria-hidden="true"></div>
+      <div id="r-card" class="rcard">
         <div id="r-level" class="ribbon">LEVEL 1-1</div>
+        <div class="rays" aria-hidden="true"></div>
         <div class="bigstars"><div class="bs s0"></div><div class="bs s1"></div><div class="bs s2"></div></div>
         <div id="r-cheer" class="cheer">Great!</div>
+        <div id="r-tier" class="tierbadge">GREAT</div>
         <div class="rrow"><span class="lbl">Golden stars</span><span id="r-gold" class="gs"></span></div>
-        <div class="rrow"><i class="coin"></i><div class="cbar"><div id="r-cfill" class="cfill"></div><i class="mark"></i></div><b id="r-coins" class="cnum">0/0</b></div>
+        <div class="rrow"><i class="coin"></i><div class="cbar"><div id="r-cfill" class="cfill"></div><i class="mark"></i></div><b class="cnum"><span id="r-coins">0</span><small id="r-total">/0</small></b></div>
         <div id="r-best" class="newbest hidden">New best!</div>
         <div class="rbtns">
           <button id="r-map" class="rb blue" aria-label="Map"><svg viewBox="0 0 24 24"><path d="M9 4l6 2 5-2v16l-5 2-6-2-5 2V6zm0 2.2v11.6l6 2V8.2z"/></svg></button>

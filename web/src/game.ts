@@ -10,11 +10,14 @@ import { RunnerFigure } from './gfx/character';
 import { CoinRenderer } from './gfx/coins';
 import { ParticlePool } from './gfx/effects';
 import { GoldenStarRenderer } from './gfx/goldStars';
+import { MagnetEffect } from './gfx/magnet';
 import { createMaterials, type Materials } from './gfx/materials';
 import { disposeGroup, followSun, makeFinishArch, makeObstacle, makeSegment, SEGMENT_LENGTH, setupEnvironment } from './gfx/world';
 
 const VIEW_AHEAD = 115;
-const CELEBRATE_SECONDS = 1.2; // the runner jogs on past the finish line before the results card
+const CELEBRATE_SECONDS = 2.8; // fireworks + celebration after the finish line, then the results card
+const COAST_SECONDS = 1.0;      // the runner jogs on past the line, then stops to celebrate
+const FIREWORK_COLORS = [0xf472b6, 0x60a5fa, 0xfde047, 0x4ade80, 0xfb923c, 0xc084fc];
 
 export interface GameEvents {
   onScore(score: number, coins: number): void;
@@ -24,6 +27,8 @@ export interface GameEvents {
   onStar(taken: number): void;
   onProgress(fraction: number): void;
   onFinish(run: LevelRun): void;
+  /** The runner just crossed the finish line (start the finish fanfare here). */
+  onFinishLine?(run: LevelRun): void;
 }
 
 /** What the loop needs from either kind of run. */
@@ -71,7 +76,10 @@ export class Game {
   private stars = new GoldenStarRenderer();
   private finishArch: THREE.Group | null = null;
   private dust = new ParticlePool(160, false);
-  private glow = new ParticlePool(400, true);
+  private glow = new ParticlePool(900, true);
+  private magnet = new MagnetEffect();
+  private magnetOn = false;
+  private fireworkTimer = 0;
   private segments = new Map<number, THREE.Group>();
   private obstacleNodes = new Map<number, THREE.Group>();
   private play: Play | null = null;
@@ -108,7 +116,7 @@ export class Game {
     this.sun = setupEnvironment(this.scene, this.renderer);
     this.figure = new RunnerFigure(this.mats);
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points);
+    this.scene.add(this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points, this.magnet.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -122,6 +130,10 @@ export class Game {
     this.dust.setScale(px);
     this.glow.setScale(px);
   }
+
+  /** Magnet power-up visuals on/off. TODO: drive from a core magnet power-up once runner.ts has one
+   *  (today only the ?magnet=1 flag in main.ts turns it on, and pulled coins are visual only). */
+  setMagnet(on: boolean): void { this.magnetOn = on; }
 
   /** Swipes and keys queue moves; one is applied per tick (like the iOS NSLock queue). */
   queue(move: Move): void {
@@ -201,7 +213,7 @@ export class Game {
           if (play.over) break;
         }
         if (ticks === 8) this.acc = 0;
-      } else if (play.level?.finished && this.finishT < CELEBRATE_SECONDS) {
+      } else if (play.level?.finished && this.finishT < COAST_SECONDS) {
         for (let i = 0; i < Math.round(dt / Runner.dt); i++) play.level.coast();
       }
       this.sync();
@@ -257,9 +269,11 @@ export class Game {
         if (this.finishT < 0) {
           this.finishT = 0;
           this.glow.burst(s.x, 2.5, -level.level.finishZ, 120, { color: 0xfde047, speed: 6, life: 0.9, size: 0.3, gravity: 4, colorJitter: 0.8 });
+          this.events.onFinishLine?.(level);
         }
         const before = this.finishT;
         this.finishT += dt;
+        this.fireworks(s.x, -s.z, dt);
         if (before < CELEBRATE_SECONDS && this.finishT >= CELEBRATE_SECONDS) this.events.onFinish(level);
       }
     }
@@ -276,6 +290,19 @@ export class Game {
         this.dustTimer -= 1;
         this.dust.burst(s.x, 0.05, -s.z + 0.25, 1, { color: 0xd6cfc4, speed: 1.4, life: 0.45, size: 0.25, dir: [0, 0.7, 0.7], spread: 0.5 });
       }
+    }
+  }
+
+  /** Fireworks bursting in the sky ahead of (and around) the runner while it celebrates. */
+  private fireworks(x: number, z: number, dt: number): void {
+    if (this.finishT > CELEBRATE_SECONDS) return;
+    this.fireworkTimer -= dt;
+    while (this.fireworkTimer <= 0) {
+      this.fireworkTimer += 0.22 + Math.random() * 0.2;
+      const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+      const bx = x + (Math.random() * 2 - 1) * 7, by = 6 + Math.random() * 4, bz = this.finishT < COAST_SECONDS ? z - 8 - Math.random() * 10 : z + 4 + Math.random() * 10; // stay in front of the camera as it swings round
+      this.glow.burst(bx, by, bz, 70, { color, speed: 5.5, life: 1.1, size: 0.34, gravity: 2.5, colorJitter: 0.25 });
+      this.glow.burst(bx, by, bz, 14, { color: 0xffffff, speed: 1.5, life: 0.35, size: 0.5 }); // bright core flash
     }
   }
 
@@ -306,10 +333,20 @@ export class Game {
         }
       } else visible.push(c);
     }
-    this.coins.update(visible, this.time, this.frameDt);
+    this.magnet.update(this.magnetOn && !s.crashed, s.x, s.y, -s.z, this.time, this.frameDt);
+    const ms = this.magnet.level;
+    this.coins.update(visible, this.time, this.frameDt, ms > 0 ? {
+      x: s.x, y: s.y + 1, z: -s.z, strength: ms,
+      onStream: (x, y, z, t) => {
+        if (Math.random() < 0.35 * t) this.glow.burst(x, y, z, 1, { color: 0xfde68a, speed: 0.6, life: 0.4, size: 0.14, colorJitter: 0.3 });
+      },
+    } : undefined);
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
     this.figure.pose(s);
+    const celebrating = p.level?.finished && this.finishT >= COAST_SECONDS;
+    // Optional hook owned by gfx/character.ts; guarded so this compiles whether or not it exists yet.
+    if (celebrating) (this.figure as unknown as { celebrate?: (t: number) => void }).celebrate?.(this.finishT - COAST_SECONDS);
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed); // 66° → 76° as it speeds up
     this.camera.updateProjectionMatrix();
     let sx = 0, sy = 0;
@@ -319,8 +356,15 @@ export class Game {
       sx = Math.sin(this.time * 90) * 0.22 * k;
       sy = -sx * 0.6;
     }
-    this.camera.position.set(s.x * 0.6 + sx, 4.0 + sy, -s.z + 7.2);
-    this.camera.rotation.set(-0.2, 0, 0);
+    if (celebrating) {
+      // swing round to the runner's front for the celebration moment
+      const k = Math.min(1, (this.finishT - COAST_SECONDS) / 1.0), e = k * k * (3 - 2 * k), a = e * Math.PI * 0.85;
+      this.camera.position.set(s.x + Math.sin(a) * 6.5, 4.0 - 1.6 * e, -s.z + Math.cos(a) * 7.2);
+      this.camera.lookAt(s.x, 1.6 + 1.5 * e, -s.z);
+    } else {
+      this.camera.position.set(s.x * 0.6 + sx, 4.0 + sy, -s.z + 7.2);
+      this.camera.rotation.set(-0.2, 0, 0);
+    }
     followSun(this.sun, s.x, -s.z);
   }
 
@@ -343,6 +387,7 @@ export class Game {
     this.coins.update([], 0, 0);
     this.dust.clear();
     this.glow.clear();
+    this.fireworkTimer = 0;
   }
 
   /** If frames are slow (iPad struggling), render fewer pixels. Never goes below 1×. */

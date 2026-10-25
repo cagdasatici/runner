@@ -2,9 +2,10 @@
 import * as THREE from 'three';
 import type { Coin } from '../core/track';
 import { COIN_Y, laneX } from '../core/track';
+import { magnetPull } from './magnet';
 import type { Materials } from './materials';
 
-const MAX = 96;
+const MAX = 192; // room for magnet trail ghosts
 const POP_TIME = 0.18;
 
 export class CoinRenderer {
@@ -36,7 +37,10 @@ export class CoinRenderer {
   clearPops(): void { this.pops = []; }
 
   /** Draws `coins` (already filtered to visible, uncollected ones) spinning once per 1.2 s. */
-  update(coins: Coin[], time: number, dt: number): void {
+  /** `pull` (magnet on): coins near the runner stream toward it along curves, stretched, with trail ghosts.
+   *  `onStream` is called per pulled coin with its drawn position so the caller can drop sparkles. */
+  update(coins: Coin[], time: number, dt: number,
+    pull?: { x: number; y: number; z: number; strength: number; onStream?: (x: number, y: number, z: number, t: number) => void }): void {
     let n = 0;
     const put = (x: number, y: number, z: number, id: number, scale: number) => {
       if (n >= MAX) return;
@@ -47,7 +51,22 @@ export class CoinRenderer {
       this.inner.setMatrixAt(n, this.m);
       n++;
     };
-    for (const c of coins) put(laneX(c.lane), COIN_Y, -c.z, c.id, 1);
+    const o = { x: 0, y: 0, z: 0 };
+    for (const c of coins) {
+      const cx = laneX(c.lane), cz = -c.z;
+      if (!pull || pull.strength <= 0) { put(cx, COIN_Y, cz, c.id, 1); continue; }
+      const t = magnetPull(cx, COIN_Y, cz, pull.x, pull.y, pull.z, c.id, o) * pull.strength;
+      if (t <= 0) { put(cx, COIN_Y, cz, c.id, 1); continue; }
+      const px = cx + (o.x - cx) * pull.strength, py = COIN_Y + (o.y - COIN_Y) * pull.strength, pz = cz + (o.z - cz) * pull.strength;
+      put(px, py, pz, c.id, 1 - 0.55 * t * t); // shrinks as it arrives
+      // trail ghosts: two smaller copies lagging behind along the curve read as a stretched streak
+      for (let g = 1; g <= 2; g++) {
+        const lag = { x: 0, y: 0, z: 0 };
+        magnetPull(cx, COIN_Y, cz + 0.9 * g, pull.x, pull.y, pull.z, c.id, lag);
+        put(cx + (lag.x - cx) * pull.strength, COIN_Y + (lag.y - COIN_Y) * pull.strength, cz + (lag.z - cz) * pull.strength, c.id, (0.7 - 0.22 * g) * t);
+      }
+      pull.onStream?.(px, py, pz, t);
+    }
     this.pops = this.pops.filter((p) => (p.t += dt) < POP_TIME);
     for (const p of this.pops) {
       const k = p.t / POP_TIME;

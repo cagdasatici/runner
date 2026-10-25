@@ -9,6 +9,7 @@ import { ScoreStore } from './core/scoreStore';
 import { Game } from './game';
 import type { Move } from './core/runner';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
+import { tierFor } from './ui/tiers';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -65,6 +66,8 @@ const game = new Game($('gl'), {
     later(350, () => show('over'));
   },
   onFinish: (run) => showResults(run),
+  // Optional hook owned by audio.ts; guarded so this compiles whether or not it exists yet.
+  onFinishLine: () => (audio as unknown as { playFinishFanfare?: () => void }).playFinishFanfare?.(),
 });
 
 function show(s: typeof screen): void {
@@ -143,21 +146,46 @@ function showResults(run: LevelRun): void {
     el.style.setProperty('--d', `${0.55 + i * 0.4}s`);
     if (i < stars) later(550 + i * 400 + 250, () => audio.sfx('star'));
   });
-  $('r-cheer').textContent = ['', 'Good!', 'Great!', 'PERFECT!'][stars];
+  const total = run.level.totalCoins, coins = run.state.coins;
+  const tier = tierFor({ stars, goldenStars: run.starsTaken.size, coins, totalCoins: total });
+  $('r-card').dataset.tier = tier.id;
+  $('r-cheer').textContent = tier.label;
+  $('r-tier').textContent = tier.id.toUpperCase();
+  confetti(tier.confetti, tier.rank);
   $('r-gold').innerHTML = [0, 1, 2].map((i) => `<i class="${i < run.starsTaken.size ? 'got' : ''}">${STAR_SVG}</i>`).join('');
   show('results'); // first, so the count-up below sees screen === 'results'; un-hiding also restarts the CSS animations
-  const total = run.level.totalCoins, coins = run.state.coins;
+  $('r-total').textContent = `/${total}`;
+  let shown = -1;
   const t0 = performance.now();
   const count = () => { // coins count up over 1.2 s, starting after 0.5 s
     const k = Math.min(1, Math.max(0, (performance.now() - t0 - 500) / 1200));
     const c = Math.round(coins * k);
-    $('r-coins').textContent = `${c}/${total}`;
-    $('r-cfill').style.width = `${(c / total) * 100}%`;
+    if (c !== shown) {
+      shown = c;
+      const el = $('r-coins');
+      el.textContent = String(c);
+      el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); // restart the tick animation
+    }
+    $('r-cfill').style.width = `${total ? (c / total) * 100 : 0}%`;
     if (k < 1 && screen === 'results') requestAnimationFrame(count);
   };
   count();
   $('r-best').classList.toggle('hidden', !newBest || stars < 2);
   $('r-next').classList.toggle('hidden', n >= LEVEL_COUNT);
+}
+
+const CONFETTI_COLORS = ['#f472b6', '#60a5fa', '#fde047', '#4ade80', '#fb923c', '#c084fc'];
+/** Falling confetti over the results card; higher tiers also get star-shaped pieces. */
+function confetti(count: number, rank: number): void {
+  const box = $('r-confetti');
+  box.textContent = '';
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('i');
+    if (rank >= 2 && i % 4 === 0) p.className = 'star';
+    p.style.cssText = `left:${Math.random() * 100}%;--c:${CONFETTI_COLORS[i % CONFETTI_COLORS.length]};` +
+      `--dl:${(Math.random() * 1.6).toFixed(2)}s;--du:${(2.2 + Math.random() * 1.8).toFixed(2)}s;--dx:${Math.round(Math.random() * 120 - 60)}px;--r:${Math.round(Math.random() * 720)}deg`;
+    box.appendChild(p);
+  }
 }
 
 // --- buttons ---
@@ -237,6 +265,7 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
+if (params.get('magnet') === '1') game.setMagnet(true); // preview the magnet visuals (no core power-up yet)
 if (Number.isInteger(levelFlag) && levelFlag >= 1 && levelFlag <= LEVEL_COUNT) playLevel(levelFlag);
 else if (autoplay) playEndless();
 else goMenu();
