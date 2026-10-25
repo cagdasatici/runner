@@ -278,12 +278,14 @@ function showResults(run: LevelRun): void {
   confetti(tier.confetti, tier.rank);
   $('r-gold').innerHTML = [0, 1, 2].map((i) => `<i class="${i < run.starsTaken.size ? 'got' : ''}">${STAR_SVG}</i>`).join('');
   show('results'); // first, so the count-up below sees screen === 'results'; un-hiding also restarts the CSS animations
-  $('r-total').textContent = `/${total}`;
+  // roof coins are a bonus beyond the level total: show them separately instead of e.g. 77/75
+  const bonus = Math.max(0, coins - total);
+  $('r-total').textContent = bonus ? `/${total} +${bonus} bonus` : `/${total}`;
   let shown = -1;
   const t0 = performance.now();
   const count = () => { // coins count up over 1.2 s, starting after 0.5 s
     const k = Math.min(1, Math.max(0, (performance.now() - t0 - 500) / 1200));
-    const c = Math.round(coins * k);
+    const c = Math.round(Math.min(coins, total || coins) * k);
     if (c !== shown) {
       shown = c;
       const el = $('r-coins');
