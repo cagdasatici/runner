@@ -130,7 +130,7 @@ const game = new Game($('gl'), {
   },
   onFinish: (run) => showResults(run),
   // Optional hook owned by audio.ts; guarded so this compiles whether or not it exists yet.
-  onFinishLine: () => (audio as unknown as { playFinishFanfare?: () => void }).playFinishFanfare?.(),
+  onFinishLine: () => { audio.playFinishFanfare(); },
   onPower: (p) => { renderPowers(p); audioPower(p); },
   onToast: (text) => {
     const el = $('toast');
@@ -262,7 +262,7 @@ function showResults(run: LevelRun): void {
   const n = run.level.spec.n, stars = run.stars;
   const newBest = progress.record(n, stars);
   audio.playMusic({ mode: 'results', world: run.level.spec.world });
-  audio.sfx('win');
+  // the finish fanfare (started at the line) covers the win sting
   $('r-level').textContent = `LEVEL ${levelName(n)}`;
   document.querySelectorAll<HTMLElement>('#results .bs').forEach((el, i) => {
     el.innerHTML = `<span class="empty">${STAR_SVG}</span><span class="full">${STAR_SVG}</span>`;
