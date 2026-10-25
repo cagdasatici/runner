@@ -56,7 +56,7 @@ describe('buildLevel', () => {
         const z0 = rowStart(spec, row);
         const lanes = L.track.obstacles.filter((o) => o.z === z0).map((o) => o.lane);
         expect(lanes.length >= 1 && lanes.length <= (row < 3 ? 1 : 2), `level ${n} row ${row}`).toBe(true);
-        const coinLanes = new Set(L.track.coins.filter((c) => c.z >= z0 && c.z <= z0 + 8).map((c) => c.lane)); // the 5-coin trail
+        const coinLanes = new Set(L.track.coins.filter((c) => c.y === undefined && c.z >= z0 && c.z <= z0 + 8).map((c) => c.lane)); // the 5-coin trail
         expect(coinLanes.size, `level ${n} row ${row}`).toBe(1);
         expect(lanes.includes([...coinLanes][0]), `level ${n} row ${row}: coins on an obstacle`).toBe(false);
       }
@@ -130,5 +130,29 @@ describe('LevelRun', () => {
     const z = g.state.z;
     g.tick('left');
     expect(g.state.z).toBe(z);
+  });
+});
+
+describe('pickups', () => {
+  it('levels 1 and 2 have none; later levels have some; same level, same pickups', () => {
+    expect(buildLevel(1).track.pickups).toHaveLength(0);
+    expect(buildLevel(2).track.pickups).toHaveLength(0);
+    let total = 0;
+    for (let n = 3; n <= LEVEL_COUNT; n++) total += buildLevel(n).track.pickups.length;
+    expect(total).toBeGreaterThan(150);
+    expect(buildLevel(40).track.pickups).toEqual(buildLevel(40).track.pickups);
+  });
+  it('jetpacks only from level 8; no golden star inside a flight; air coins follow a jetpack and are bonus coins', () => {
+    for (let n = 3; n <= LEVEL_COUNT; n++) {
+      const L = buildLevel(n);
+      for (const p of L.track.pickups) {
+        if (p.kind === 'jetpack') expect(n, `level ${n}`).toBeGreaterThanOrEqual(8);
+        if (p.kind === 'jetpack') {
+          for (const g of L.stars) expect(g.z > p.z && g.z < p.z + 170, `level ${n} star ${g.z} in flight`).toBe(false);
+          expect(L.track.coins.filter((c) => c.y !== undefined && c.y > 5 && c.z > p.z).length).toBeGreaterThanOrEqual(30);
+        }
+      }
+      expect(L.totalCoins).toBe(L.track.coins.filter((c) => c.y === undefined).length);
+    }
   });
 });
