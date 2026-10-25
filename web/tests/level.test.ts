@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { Runner } from '../src/core/runner';
 import { collectorMove } from '../src/core/autopilot';
-import { buildLevel, coinsFor3Stars, LEVEL_COUNT, LevelRun, levelSpec, rating, rowStart } from '../src/core/level';
+import { buildLevel, coinsFor3Stars, FINISH_EASE_SECONDS, LEVEL_COUNT, LevelRun, levelSpec, rating, rowStart } from '../src/core/level';
 
 /** Plays a level with the journey autopilot until it finishes or crashes. */
 function autoplay(n: number): LevelRun {
@@ -101,6 +102,18 @@ describe('LevelRun', () => {
     expect(g.state.coins).toBe(70);
     expect(g.starsTaken.size).toBe(3);
     expect(g.stars).toBe(3);
+  });
+  it('coast eases an airborne/crawling finish back to standing on the ground within 0.3 s', () => {
+    const g = autoplay(1);
+    g.state = { ...g.state, y: 1.0, vy: 2, slideTicks: 40 };
+    const ticks = Math.ceil(FINISH_EASE_SECONDS / Runner.dt);
+    g.coast();
+    expect(g.state.slideTicks).toBe(0);
+    expect(g.state.y).toBeLessThan(1.0);
+    expect(g.state.y).toBeGreaterThan(0);
+    for (let i = 1; i < ticks; i++) g.coast();
+    expect(g.state.y).toBe(0);
+    expect(g.state.vy).toBe(0);
   });
   it('autopilot finishes and 3-stars every level 1…120', () => {
     for (let n = 1; n <= LEVEL_COUNT; n++) {

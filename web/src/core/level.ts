@@ -126,6 +126,8 @@ export function rating(r: { finished: boolean; goldenStars: number; coins: numbe
 }
 
 /** One attempt at a level: runner + finite track + golden stars + finish line. */
+export const FINISH_EASE_SECONDS = 0.3;
+
 export class LevelRun {
   readonly level: Level;
   state: RunnerState = startState();
@@ -151,8 +153,18 @@ export class LevelRun {
   }
 
   /** For the finish celebration: keeps the runner jogging past the line without any more rules. */
+  private coastTicks = 0;
+  private coastY0 = 0;
+
   coast(): void {
     const s = cloneState(this.state);
+    // Release crawl and ease any airborne height back to the ground over FINISH_EASE_SECONDS (smoothstep).
+    if (this.coastTicks === 0) this.coastY0 = s.y;
+    this.coastTicks += 1;
+    s.slideTicks = 0;
+    s.vy = 0;
+    const k = Math.min(1, (this.coastTicks * Runner.dt) / FINISH_EASE_SECONDS);
+    s.y = this.coastY0 * (1 - k * k * (3 - 2 * k));
     s.z += this.level.spec.pace.max * 0.6 * Runner.dt;
     s.tick += 1;
     this.state = s;
