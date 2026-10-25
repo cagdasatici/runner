@@ -24,7 +24,7 @@ export function skyTexture(t: Theme): THREE.Texture {
   const el = canvas(W, H, (c) => {
     const g = c.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, hex(t.sky.top));
-    g.addColorStop(0.28, hex(t.sky.mid));
+    g.addColorStop(0.4, hex(t.sky.mid));
     g.addColorStop(0.5, hex(t.sky.horizon));
     g.addColorStop(0.52, hex(t.sky.below));
     g.addColorStop(1, hex(t.sky.below));

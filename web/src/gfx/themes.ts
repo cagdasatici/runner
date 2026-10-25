@@ -40,10 +40,10 @@ export const ENDLESS_THEME_ID = 'endless';
 const THEME_LIST: Theme[] = [
   { // 1 – sunny city
     id: 'sunny-city', name: 'Sunny City',
-    sky: { top: 0x2f7be8, mid: 0x6cc4f5, horizon: 0xd9f0fb, below: 0xd9f0fb },
+    sky: { top: 0x2f7be8, mid: 0x4fb0f5, horizon: 0xa8dcf7, below: 0xa8dcf7 },
     cloud: { color: 0xffffff, alpha: 0.9, count: 16 }, stars: 0,
     orb: { color: 0xfff6c8, size: 26, height: 0.2 },
-    fog: { color: 0xd9f0fb, near: 48, far: 128 },
+    fog: { color: 0xb8e2f8, near: 48, far: 128 },
     hemi: { sky: 0xdff1ff, ground: 0xa89c86, intensity: 1.55 },
     sun: { color: 0xfff0d2, intensity: 2.5 },
     grade: { tint: [1.02, 1.0, 0.98], saturation: 1.14, contrast: 1.06 },
@@ -91,10 +91,10 @@ const THEME_LIST: Theme[] = [
   },
   { // 4 – snow village
     id: 'snow-village', name: 'Snow Village',
-    sky: { top: 0x7aa8e0, mid: 0xb4d4f2, horizon: 0xeef6fd, below: 0xeef6fd },
+    sky: { top: 0x7aa8e0, mid: 0x8fbdf0, horizon: 0xcfe5f8, below: 0xcfe5f8 },
     cloud: { color: 0xffffff, alpha: 0.95, count: 18 }, stars: 0,
     orb: { color: 0xffffff, size: 18, height: 0.16 },
-    fog: { color: 0xe6f1fb, near: 38, far: 112 },
+    fog: { color: 0xd6e8f8, near: 38, far: 112 },
     hemi: { sky: 0xe3f0ff, ground: 0x9fb2c8, intensity: 1.6 },
     sun: { color: 0xf3f6ff, intensity: 2.2 },
     grade: { tint: [0.98, 1.0, 1.04], saturation: 1.1, contrast: 1.05 },
@@ -108,7 +108,7 @@ const THEME_LIST: Theme[] = [
   },
   { // 5 – desert canyon
     id: 'desert-canyon', name: 'Desert Canyon',
-    sky: { top: 0x3b9fe0, mid: 0x9bd5ee, horizon: 0xfde6b8, below: 0xfde6b8 },
+    sky: { top: 0x3b9fe0, mid: 0x6cc0ec, horizon: 0xfde6b8, below: 0xfde6b8 },
     cloud: { color: 0xfff6e6, alpha: 0.7, count: 8 }, stars: 0,
     orb: { color: 0xfffbe0, size: 30, height: 0.3 },
     fog: { color: 0xf8dfb0, near: 46, far: 126 },
@@ -142,10 +142,10 @@ const THEME_LIST: Theme[] = [
   },
   { // 7 – harbour
     id: 'harbour-bay', name: 'Harbour Bay',
-    sky: { top: 0x1f88e0, mid: 0x6fc0f0, horizon: 0xe0f1fa, below: 0xe0f1fa },
+    sky: { top: 0x1f88e0, mid: 0x4aaaf0, horizon: 0xa6d8f5, below: 0xa6d8f5 },
     cloud: { color: 0xffffff, alpha: 0.9, count: 14 }, stars: 0,
     orb: { color: 0xfffadc, size: 24, height: 0.24 },
-    fog: { color: 0xd3eaf6, near: 44, far: 124 },
+    fog: { color: 0xb4dcf4, near: 44, far: 124 },
     hemi: { sky: 0xd8efff, ground: 0x8a9aa8, intensity: 1.55 },
     sun: { color: 0xfff4dc, intensity: 2.5 },
     grade: { tint: [0.99, 1.01, 1.03], saturation: 1.15, contrast: 1.06 },
@@ -210,7 +210,7 @@ const THEME_LIST: Theme[] = [
   },
   { // 11 – autumn park
     id: 'autumn-park', name: 'Autumn Park',
-    sky: { top: 0x4f9ade, mid: 0xa8d0f0, horizon: 0xfff0d0, below: 0xfff0d0 },
+    sky: { top: 0x4f9ade, mid: 0x7fbcf0, horizon: 0xfff0d0, below: 0xfff0d0 },
     cloud: { color: 0xfffaf0, alpha: 0.9, count: 14 }, stars: 0,
     orb: { color: 0xfff2c0, size: 26, height: 0.22 },
     fog: { color: 0xf8e6c0, near: 44, far: 124 },
