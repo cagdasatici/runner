@@ -26,9 +26,22 @@ Everything is generated in code with Web Audio (no samples). Code: `web/src/audi
 | endless | D | dorian | 112-136 | four |
 
 Chords are diatonic (stacked scale thirds), so every pitched note is in key (unit-tested for all themes).
+All themes swing odd 16ths a little (0.06 by default; menu 0.16, worlds 6 and 11 more).
+
+## Form and melody (horizontal)
+Each theme is a 32-bar song that repeats: verse (8) - chorus (8) - verse 2 (8) - breakdown (8). A theme switch restarts at the verse.
+- Chords per section, as indices into the theme's 4-chord `prog`: verse/verse 2 `0 1 2 3 0 1 2 3`, chorus `3 0 2 1 3 0 1 3`, breakdown `0 0 3 3 2 2 3 3` (half-speed harmony).
+- Lead melody: hand-written one-bar motifs (`MOTIFS` in music.ts, degrees above the chord root; chord tones on strong beats). Each theme has a 4-motif set `melody = [a, b, c, d]`: verse bars `a b a c a b d` + cadence, chorus `c d c a c d b` + high cadence, an octave up when it fits. The breakdown lead holds long chord tones. Same theme = same tune every time.
+- Counter line (L3) harmonises the lead's long notes a third below.
+- Bass follows the theme pattern (chorus adds a pickup octave), walks into the next chord with an in-key approach note on the last 16th, and holds whole notes in the breakdown.
+- Drums: accented hats, ghost snares on odd bars, a snare+tom fill on bar 8, crash at section starts. Breakdown: no hats/snare/clap, kick on beat 1, then 2 and 4 kicks per bar and a snare roll to rebuild.
+- Humanising (deterministic per bar): velocity +-10 %, timing drift up to +-0.06 of a 16th (never on kicks, never before a bar line).
+
+## Instruments and mix
+Pad: 3 detuned oscillators + sine per note, filter envelope that swells through the bar plus a slow LFO. Lead: two detuned oscillators + sub square, per-note filter blip, delayed vibrato, reverb + echo. Bass: plucky resonant filter that snaps shut (velocity opens it). Snare: two detuned body tones + bandpassed crack + highpassed sizzle. Hats: velocity changes length and brightness. Kicks pump the tonal buses (pad, bass, plucks, arp, lead, counter) down by 45 % for ~0.1 s, sidechain style; drums are on separate, unpumped buses.
 
 ## Layers (vertical)
-L0 pad + kick always; L1 hats, snare, bass, chord plucks from 14 m/s; L2 arp lead from 18 m/s; L3 shaker, toms, clap, open hat, counter-melody and filter opening (5.2 kHz to 12 kHz) from 22 m/s or while a power-up is active. Held boost adds +3 m/s. Hysteresis 0.8 m/s. Changes are evaluated at bar lines: fade in 1 bar, out 2 bars. Speed is smoothed (1.5 s time constant sampled per bar).
+L0 pad + kick + lead melody always; L1 hats, snare, bass, chord plucks from 14 m/s; L2 arp lead from 18 m/s; L3 shaker, toms, clap, open hat, counter-melody and filter opening (5.2 kHz to 12 kHz) from 22 m/s or while a power-up is active. Held boost adds +3 m/s. Hysteresis 0.8 m/s. Changes are evaluated at bar lines: fade in 1 bar, out 2 bars. Speed is smoothed (1.5 s time constant sampled per bar).
 Tempo: linear in speed 9 to 24 m/s between the theme's min and max, even BPM, max 4 BPM change per bar.
 
 ## Switching and stingers
