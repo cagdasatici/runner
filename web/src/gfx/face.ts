@@ -200,7 +200,8 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): F
     }
   }
 
-  // --- glasses: thin round frames on the eye line, arms back to the ears (kept over a photo face too) ---
+  // --- glasses: thin round frames on the eye line, arms back to the ears (removed with the rest when a photo shows its own) ---
+  tracking = true;
   if (face.glasses) {
     const frame = mat(0xc9ccd4, { roughness: 0.25, metalness: 0.4 });
     const lens = new THREE.MeshStandardMaterial({ color: 0xdff0ff, transparent: true, opacity: 0.16, roughness: 0.05, depthWrite: false });
@@ -218,14 +219,13 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): F
     const bridge = new THREE.Mesh(new THREE.TorusGeometry(W * 0.05, W * 0.009, 6, 12, Math.PI), frame);
     put(bridge, cx0, eyeY + W * 0.035, gz(cx0));
   }
-  tracking = true;
   if (!face.photo) return null;
   const photo = face.photo;
   // Project the picture straight onto the head's own skin (front planar projection, measured on the bind pose):
   // the texture rides on the skinned vertices, so it follows the head shape and every animation with no gaps.
   // Photo landmarks (eyes, mouth) are pinned to the model's eye line, eye spacing and mouth height.
-  const [[ex0, ey0], [ex1, ey1]] = photo.eyes, mx = (ex0 + ex1) / 2, my = (ey0 + ey1) / 2;
-  const kx = (cx * 2) / Math.abs(ex1 - ex0), ky = (W * photo.mouthDrop) / (photo.mouth[1] - my); // model units per photo px
+  const { mx, my, ed, md, cos, sin } = landmarks(photo);
+  const kx = (cx * 2) / ed, ky = (W * photo.mouthDrop) / md; // model units per photo px (in the head-upright frame)
   // the head is a handful of big flat facets: lit as-is they cut the picture into bright and dark patches,
   // so its normals are replaced by those of a smooth ellipsoid around the head (radial from its centre)
   const centre = new THREE.Vector3(cx0, eyeY - W * 0.1, zc), ell = new THREE.Vector3(1, 1.15, 1);
@@ -240,8 +240,9 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): F
       } else n.fromBufferAttribute(m.geometry.attributes.normal as THREE.BufferAttribute, i);
       nor.set([n.x, n.y, n.z], i * 3);
       // viewer-left (world +x) is the photo's left; anything behind the face plane maps to a far corner (plain skin)
-      out[i * 2] = p.z > zc ? -1e4 : mx - (p.x - cx0) / kx;
-      out[i * 2 + 1] = p.z > zc ? -1e4 : my - (p.y - eyeY) / ky;
+      const du = -(p.x - cx0) / kx, dv = -(p.y - eyeY) / ky; // then turned by the head's tilt in the picture
+      out[i * 2] = p.z > zc ? -1e4 : mx + du * cos - dv * sin;
+      out[i * 2 + 1] = p.z > zc ? -1e4 : my + du * sin + dv * cos;
     }
     return { px: out, nor };
   });
@@ -267,6 +268,14 @@ export function addFace(model: THREE.Group, wrap: THREE.Group, face: FaceDef): F
   };
 }
 
+/** Eye midpoint, eye distance, eye-to-mouth distance and the head's tilt in the picture (eyes not level). */
+function landmarks(p: NonNullable<FaceDef['photo']>) {
+  const [[ex0, ey0], [ex1, ey1]] = p.eyes, mx = (ex0 + ex1) / 2, my = (ey0 + ey1) / 2;
+  const ed = Math.hypot(ex1 - ex0, ey1 - ey0), cos = (ex1 - ex0) / ed, sin = (ey1 - ey0) / ed;
+  const md = -(p.mouth[0] - mx) * sin + (p.mouth[1] - my) * cos; // along the face's own down axis
+  return { mx, my, ed, md, cos, sin };
+}
+
 /**
  * Loads the picture and paints it for the head: the face oval is colour-matched to the model's skin, softened a little
  * (the head is small on screen; pores and JPEG noise only read as dirt) and feathered into plain skin all around.
@@ -285,29 +294,31 @@ async function photoTexture(p: NonNullable<FaceDef['photo']>, skinHex: number): 
   cv.width = w * S; cv.height = h * S;
   const c = cv.getContext('2d');
   if (!c) return null;
-  // soften: draw at half size, then back up with smoothing
+  // soften: draw smaller, then back up with smoothing; only big faces need it (about 40 px between the eyes is plenty on screen)
+  const soft = Math.min(1, 40 / landmarks(p).ed);
   const small = document.createElement('canvas');
-  small.width = Math.round(w * 0.6); small.height = Math.round(h * 0.6);
+  small.width = Math.round(w * soft); small.height = Math.round(h * soft);
   const sc = small.getContext('2d')!;
   sc.imageSmoothingQuality = 'high';
   sc.drawImage(img, 0, 0, small.width, small.height);
   c.imageSmoothingQuality = 'high';
   c.drawImage(small, 0, 0, cv.width, cv.height);
   const data = c.getImageData(0, 0, cv.width, cv.height), d = data.data;
-  const [[ex0, ey0], [ex1, ey1]] = p.eyes, mx = (ex0 + ex1) / 2, my = (ey0 + ey1) / 2, ed = Math.abs(ex1 - ex0), md = p.mouth[1] - my;
+  const [[ex0], [ex1]] = p.eyes, { mx, my, ed, md, cos, sin } = landmarks(p);
   // average cheek colour (under each eye) → per-channel gain to the model's skin, so the face edge disappears
   const sr = (skinHex >> 16) & 255, sg = (skinHex >> 8) & 255, sb = skinHex & 255;
   const avg = [0, 0, 0]; let n = 0;
-  for (const ex of [ex0, ex1]) for (let y = my + md * 0.35; y < my + md * 0.6; y++) for (let x = ex - ed * 0.15; x < ex + ed * 0.15; x++) {
+  for (const ex of [ex0, ex1]) for (let y = my + md * 0.35; y < my + md * 0.6; y++) for (let x = ex - ed * 0.15; x < ex + ed * 0.15; x++) { // (tilt ignored: a few px)
     const i = (Math.round(y * S) * cv.width + Math.round(x * S)) * 4;
     avg[0] += d[i]; avg[1] += d[i + 1]; avg[2] += d[i + 2]; n++;
   }
   const gain = [sr / (avg[0] / n), sg / (avg[1] / n), sb / (avg[2] / n)];
   // face oval: cheek to cheek, hairline to chin
-  const cx = mx, cy = my + md * 0.3, rx = ed * 1.0, ry = md * 1.35;
+  const cy = my + md * 0.3, rx = ed * 1.0, ry = md * 1.35;
   for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
     const i = (y * cv.width + x) * 4;
-    const r = Math.hypot((x / S - cx) / rx, (y / S - cy) / ry);
+    const dx = x / S - mx, dy = y / S - my, u = dx * cos + dy * sin, v = -dx * sin + dy * cos; // head-upright frame
+    const r = Math.hypot(u / rx, (v - (cy - my)) / ry);
     const t = Math.max(0, Math.min(1, (1 - r) / 0.3)), a = t * t * (3 - 2 * t);
     const skin = [sr, sg, sb];
     for (let k = 0; k < 3; k++) d[i + k] = Math.round(skin[k] + (Math.min(255, d[i + k] * gain[k]) - skin[k]) * a);
