@@ -1,6 +1,7 @@
 // Port of App/GameController.swift + the menu backdrop: one WebGL canvas, two modes (menu, playing).
 // A run is either endless (RunSession) or a journey level (LevelRun, finite with a finish line and golden stars).
 // Fixed-step loop: one tick per Runner.dt, at most 8 ticks per frame (extra time dropped).
+import { setMaxAnisotropy } from './gfx/textures';
 import * as THREE from 'three';
 import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
@@ -20,6 +21,7 @@ import { ENDLESS_THEME, MENU_THEME, themeForWorld, type Theme } from './gfx/them
 import { disposeGroup, Environment, makeFinishArch, makeObstacle, makeSegment, SEGMENT_LENGTH } from './gfx/world';
 
 export type Quality = 'low' | 'high';
+const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 1536, LOW_SHADOW = 512;
 
 const VIEW_AHEAD = 115;
 const CELEBRATE_SECONDS = 1.2; // the runner jogs on past the finish line before the results card
@@ -103,6 +105,7 @@ export class Game {
   private theme: Theme = MENU_THEME;
   quality: Quality = 'high';
   private qualityLocked = false;
+  private frameTime = 0;
   private lean = 0;
   private camX = 0;
   private sparkles = new ParticlePool(120, true, sparkleTexture());
@@ -142,7 +145,6 @@ export class Game {
   private frameDt = 0;
   private popped = new Set<number>(); // coin ids already shown popping
   private pixelRatio: number;
-  private slowFrames = 0;
   private frames = 0;
 
   constructor(canvas: HTMLCanvasElement, private events: GameEvents, forced?: Quality) {
@@ -152,11 +154,12 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? 1.5 : 1.25);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? HIGH_DPR : LOW_DPR);
+    setMaxAnisotropy(Math.min(this.renderer.capabilities.getMaxAnisotropy(), this.quality === 'high' ? 8 : 2));
     this.renderer.setPixelRatio(this.pixelRatio);
     this.mats = createMaterials();
     this.envMats = createEnvMaterials();
-    this.env = new Environment(this.scene, this.renderer, this.envMats, this.quality === 'high' ? 1024 : 512);
+    this.env = new Environment(this.scene, this.renderer, this.envMats, this.quality === 'high' ? HIGH_SHADOW : LOW_SHADOW);
     this.post = new PostFx(this.renderer);
     this.post.enabled = this.quality === 'high';
     this.applyTheme(MENU_THEME);
@@ -473,28 +476,26 @@ export class Game {
 
   /** If frames are slow (iPad struggling): first drop bloom/grading and shadow resolution, then render fewer pixels. */
   private adaptQuality(dt: number): void {
-    if (dt <= 0 || this.qualityLocked) return;
+    if (dt <= 0 || dt > 0.5 || this.qualityLocked) return; // ignore tab-switch hitches
     this.frames++;
-    if (dt > 1 / 45) this.slowFrames++;
-    if (this.frames >= 120) {
-      if (this.slowFrames > 30) {
-        if (this.quality === 'high') this.setQuality('low');
-        else if (this.pixelRatio > 1) {
-          this.pixelRatio = Math.max(1, this.pixelRatio - 0.25);
-          this.renderer.setPixelRatio(this.pixelRatio);
-          this.resize();
-        }
-      }
-      this.frames = 0;
-      this.slowFrames = 0;
-    }
+    this.frameTime += dt;
+    if (this.frameTime < 2) return; // evaluate over ~2 s windows
+    const avg = this.frameTime / this.frames;
+    this.frames = 0;
+    this.frameTime = 0;
+    if (avg <= 0.02) return; // > 20 ms average: step down one notch (dynamic resolution, then low tier)
+    if (this.pixelRatio > 1.01) {
+      this.pixelRatio = Math.max(1, this.pixelRatio - 0.25);
+      this.renderer.setPixelRatio(this.pixelRatio);
+      this.resize();
+    } else if (this.quality === 'high') this.setQuality('low');
   }
 
   setQuality(q: Quality): void {
     this.quality = q;
     this.post.enabled = q === 'high';
-    this.env.setShadowSize(q === 'high' ? 1024 : 512);
-    this.pixelRatio = Math.min(this.pixelRatio, q === 'high' ? 1.5 : 1.25);
+    this.env.setShadowSize(q === 'high' ? HIGH_SHADOW : LOW_SHADOW);
+    this.pixelRatio = Math.min(this.pixelRatio, q === 'high' ? HIGH_DPR : LOW_DPR);
     this.renderer.setPixelRatio(this.pixelRatio);
     this.resize();
   }

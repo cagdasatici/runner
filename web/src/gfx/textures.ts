@@ -21,10 +21,15 @@ export function canvas(w: number, h: number, draw: (c: CanvasRenderingContext2D)
   return el;
 }
 
+let maxAniso = 4;
+export function getMaxAnisotropy(): number { return maxAniso; }
+/** Set before textures are created (Game constructor). */
+export function setMaxAnisotropy(n: number): void { maxAniso = n; }
+
 export function texture(el: HTMLCanvasElement, repeat = false): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(el);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = maxAniso;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }

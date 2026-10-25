@@ -2,7 +2,7 @@
 // Everything is drawn once with Canvas 2D (no downloaded art), kept small (<= 1024 px) and shared.
 import * as THREE from 'three';
 import type { Theme } from './themes';
-import { canvas, hex, noise, roundRect, texture } from './textures';
+import { canvas, hex, getMaxAnisotropy, noise, roundRect, texture } from './textures';
 
 const mix = (a: number, b: number, t: number): number => {
   const r = Math.round(((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t);
@@ -330,7 +330,7 @@ export function vehicleAtlas(): THREE.Texture {
     }
   });
   const t = texture(el);
-  t.anisotropy = 4;
+  t.anisotropy = getMaxAnisotropy();
   return t;
 }
 
