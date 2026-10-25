@@ -180,7 +180,8 @@ export class RunnerFigure {
     // procedural layer: pitch and squash ease toward the target of the current animation
     let pitch = 0, squash = 1, roll = 0;
     const tuck = e.def.slide === 'tuck';
-    if (key === 'slide' && tuck) { pitch = -0.35; squash = 0.55; }
+    // crouch: squash toward the feet and lean slightly forward; no big pitch, which tipped animals nose-down about their feet
+    if (key === 'slide' && tuck) { pitch = e.def.clips.run === 'Run' && e.def.id === 'adventurer' ? -0.25 : -0.08; squash = 0.6; }
     else if (key === 'fly') { pitch = -0.95 + Math.sin(this.t * 6) * 0.05; }
     else if (key === 'board') { pitch = -0.1; squash = 0.94; }
     else if (key === 'jump') { squash = s.vy > 0 ? 1.04 : 0.97; }

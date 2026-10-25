@@ -12,7 +12,7 @@ export interface CharacterDef {
   height: number;
   /** Clip name per animation. Missing keys are handled procedurally (see RunnerFigure). */
   clips: Partial<Record<AnimKey, string>>;
-  /** How the runner ducks under bars: play a roll clip, or tuck (squash and pitch the body procedurally). */
+  /** How the runner ducks under bars: play a roll clip, or tuck (a procedural crouch: squash and lean). */
   slide: 'clip' | 'tuck';
   /** Optional colour multiplier for the model's materials (0xffffff = unchanged). */
   tint?: number;
@@ -30,8 +30,9 @@ const animal = (id: string, name: string, height: number, extra: Partial<Charact
 
 export const CHARACTERS: readonly CharacterDef[] = [
   {
-    id: 'adventurer', name: 'Alex', model: 'models/adventurer.glb', height: 1.7, slide: 'clip', yaw: Math.PI, runSpeed: 1.0,
-    clips: { run: 'Run', jump: 'Run', slide: 'Roll', crash: 'Death', idle: 'Idle', stumble: 'HitRecieve', fly: 'Run', board: 'Idle' },
+    id: 'adventurer', name: 'Alex', model: 'models/adventurer.glb', height: 1.7, slide: 'tuck', yaw: Math.PI, runSpeed: 1.0,
+    // slide: the Roll clip is a full somersault (inverts the body, clips the head into the track), so Alex crouches procedurally instead
+    clips: { run: 'Run', jump: 'Run', crash: 'Death', idle: 'Idle', stumble: 'HitRecieve', fly: 'Run', board: 'Idle' },
   },
   animal('shiba', 'Biscuit', 1.35),
   animal('cat', 'Whiskers', 1.15, {

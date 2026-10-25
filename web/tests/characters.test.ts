@@ -54,4 +54,8 @@ describe('registry', () => {
     expect(loadCharacter(broken)).toBe(DEFAULT_CHARACTER);
     expect(() => saveCharacter('cat', broken)).not.toThrow();
   });
+  it('after the finish-line coast releases crawl/jump the animation returns to run', () => {
+    expect(animFor({ ...base, slideTicks: 0, y: 0.4 })).toBe('jump'); // easing down
+    expect(animFor({ ...base, slideTicks: 0, y: 0, vy: 0 })).toBe('run'); // standing again
+  });
 });
