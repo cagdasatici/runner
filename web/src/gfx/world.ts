@@ -69,7 +69,7 @@ export class Environment {
     this.scene.background = null;
     this.envTex = this.pmrem.fromEquirectangular(this.skyTex).texture;
     this.scene.environment = this.envTex;
-    this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near, t.fog.far);
+    this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near * 1.25, t.fog.far * 1.2);
     const tint = t.stars > 0.5 ? 0x8fa8ff : t.sky.mid === 0xf2788a ? 0xffb38a : 0xffd9a8; // night: cooler, sunset: warmer, day: golden hour
     this.dome.set(this.skyTex, tint, t.stars > 0.5 ? 0.35 : 1);
     this.fogBase.setHex(t.fog.color); this.fogTint.setHex(tint);

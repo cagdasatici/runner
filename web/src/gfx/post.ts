@@ -27,7 +27,6 @@ void main() {
 const COMPOSITE = `
 uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform vec2 texel;
 varying vec2 vUv;
-vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec3 c = texture2D(scene, vUv).rgb + texture2D(bloom, vUv).rgb * strength;
   c *= tint;
@@ -40,7 +39,10 @@ void main() {
     vec3 blurN = (texture2D(scene, vUv + vec2(texel.x, 0.0)).rgb + texture2D(scene, vUv - vec2(texel.x, 0.0)).rgb
                + texture2D(scene, vUv + vec2(0.0, texel.y)).rgb + texture2D(scene, vUv - vec2(0.0, texel.y)).rgb) * 0.25;
     c += (c - blurN) * 0.35;
-    c = aces(max(c, 0.0) * 1.2);
+    // highlight-only shoulder: below 0.8 untouched, above it rolls off smoothly to 1.0; hue kept (scale by max channel)
+    float m = max(max(c.r, c.g), c.b);
+    if (m > 0.8) { float mm = 0.8 + 0.2 * (1.0 - exp(-(m - 0.8) / 0.2)); c *= mm / m; }
+    c = clamp(c, 0.0, 1.0);
     float vig = smoothstep(1.15, 0.35, length(vUv - 0.5) * 1.4); c *= mix(0.82, 1.0, vig);
   }
   gl_FragColor = vec4(max(c, 0.0), 1.0);

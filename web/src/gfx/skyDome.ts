@@ -14,11 +14,11 @@ void main() {
   vec2 uv = vec2(atan(d.z, d.x) / 6.2831853 + 0.5, asin(clamp(d.y, -1.0, 1.0)) / 3.1415927 + 0.5);
   vec3 c = texture2D(sky, uv).rgb;
   float k = 0.5 + 0.5 * sin(time * 6.2831853 / 120.0);
-  c = mix(c, c * tint * 1.15, k * 0.55);
+  c = mix(c, c * tint * 1.15, k * 0.35);
   if (d.y > 0.02) {
     vec2 q = d.xz / (d.y + 0.25) * 1.6 + vec2(time * 0.012, time * 0.004);
     float m = smoothstep(0.52, 0.78, fbm(q)) * smoothstep(0.02, 0.25, d.y) * clouds;
-    c = mix(c, mix(vec3(1.0), tint, 0.25), m * 0.75);
+    c = mix(c, mix(vec3(1.0), tint, 0.25), m * 0.55);
   }
   gl_FragColor = vec4(c, 1.0);
   #include <colorspace_fragment>
@@ -46,6 +46,6 @@ export class SkyDome {
   update(time: number, camera: THREE.Camera): number {
     this.mat.uniforms.time.value = time;
     this.mesh.position.copy(camera.position);
-    return (0.5 + 0.5 * Math.sin(time * Math.PI * 2 / 120)) * 0.55;
+    return (0.5 + 0.5 * Math.sin(time * Math.PI * 2 / 120)) * 0.35;
   }
 }
