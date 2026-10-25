@@ -21,7 +21,7 @@ svg { width: 1em; height: 1em; fill: currentColor; }
   color: #fff; font-size: 24px; display: grid; place-items: center; }
 #mute { right: 22px; } #exit { left: 22px; }
 
-.title { display: flex; flex-direction: column; align-items: center; margin-top: 70px; transform: rotate(-4deg); line-height: 0.92; }
+.title { display: flex; flex-direction: column; align-items: center; margin-top: 40px; transform: rotate(-4deg); line-height: 0.92; }
 .title span { font-size: clamp(56px, 11vmin, 104px); font-weight: 900; letter-spacing: 1px;
   color: #fff; background: linear-gradient(#fff, #fef08a); -webkit-background-clip: text; background-clip: text;
   -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; filter: drop-shadow(0 6px 0 #ea580c); }
@@ -42,8 +42,10 @@ svg { width: 1em; height: 1em; fill: currentColor; }
 .chunky.blue { background: linear-gradient(#38bdf8, #0284c7); --base: #075985; height: 64px; }
 @keyframes pulse { 50% { transform: scale(1.06); } }
 
-.hints { display: flex; gap: 14px; }
-.hints div { width: 88px; height: 70px; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+.modes { display: flex; gap: 14px; }
+.modes .chunky.small { width: 180px; }
+.hints { display: flex; gap: 12px; }
+.hints div { width: 88px; text-align: center; line-height: 1.1; height: 70px; border-radius: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 4px; color: #fff; font-size: 15px; font-weight: 800; background: rgba(30, 27, 75, 0.55); border: 2px solid rgba(255, 255, 255, 0.4); }
 .hints svg { font-size: 22px; }
 

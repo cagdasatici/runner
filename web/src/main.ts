@@ -165,7 +165,7 @@ let startBoard = true;
 try { startBoard = localStorage.getItem(BOARD_KEY) !== '0'; } catch { /* blocked storage: keep the default */ }
 function paintBoardToggle(): void {
   const b = $('board-toggle');
-  b.textContent = `🛹 Start with a board: ${startBoard ? 'ON' : 'OFF'}`;
+  b.textContent = `🛹 Board: ${startBoard ? 'ON' : 'OFF'}`;
   b.setAttribute('aria-pressed', String(startBoard));
 }
 paintBoardToggle();

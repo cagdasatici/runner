@@ -1,6 +1,7 @@
 // The runner: a CC0 rigged glTF character (see docs/ASSETS.md) driven by the deterministic RunnerState.
 // Animation clips are chosen by the pure animFor() (characters.ts) and cross-faded with THREE.AnimationMixer.
 // Faces -z (the running direction); feet at state.y. Until a model has loaded (or if loading fails) a primitive figure is shown.
+import { addFace } from './face';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -147,6 +148,7 @@ export class RunnerFigure {
       model.position.y = -box.min.y;
       if (def.beardless) removeBeard(model, wrap);
       if (def.extras?.length) addHeadExtras(model, wrap, def.extras);
+      if (def.face) addFace(model, wrap, def.face);
       if (def.bigHead) model.traverse((o) => { if ((o as THREE.Bone).isBone && o.name === 'Head') o.scale.multiplyScalar(def.bigHead!); });
       const mixer = new THREE.AnimationMixer(model);
       const actions = new Map<string, THREE.AnimationAction>();
@@ -409,22 +411,6 @@ function addHeadExtras(model: THREE.Group, wrap: THREE.Group, extras: NonNullabl
   const w = size.x, h = size.y, front = box.min.z; // the model faces -z
   // built in world units on an unscaled scratch parent, then attach() keeps that world transform under the bone
   const place = (m: THREE.Object3D, x: number, y: number, z: number, to: THREE.Object3D = bone!) => { m.position.set(x, y, z); new THREE.Group().add(m); m.updateMatrixWorld(true); to.attach(m); };
-  if (extras.includes('longHair')) {
-    const hairMat = new THREE.MeshStandardMaterial({ color: 0xa8774c, roughness: 0.75 });
-    const back = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.42, h * 0.75, 8, 20), hairMat);
-    back.scale.set(1.15, 1, 0.55);
-    back.castShadow = true;
-    place(back, c.x, box.min.y - h * 0.45, c.z + size.z * 0.3);
-    for (const sx of [-1, 1]) {
-      const side = new THREE.Mesh(new THREE.CapsuleGeometry(w * 0.12, h * 1.1, 6, 12), hairMat);
-      side.castShadow = true;
-      place(side, c.x + sx * w * 0.5, box.min.y - h * 0.05, c.z + size.z * 0.02);
-    }
-    // fringe across the forehead so the face reads as a girl's, not a bald crown
-    const fringe = new THREE.Mesh(new THREE.SphereGeometry(w * 0.56, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), hairMat);
-    fringe.scale.set(1, 1, 1.05);
-    place(fringe, c.x, box.min.y + h * 0.55, c.z);
-  }
   if (extras.includes('dress')) {
     const legs = model.getObjectByName('Adventurer_Legs');
     let hips: THREE.Object3D | undefined;
@@ -442,20 +428,6 @@ function addHeadExtras(model: THREE.Group, wrap: THREE.Group, extras: NonNullabl
       skirt.add(hem);
       place(skirt, (lb.max.x + lb.min.x) / 2, 0, (lb.max.z + lb.min.z) / 2, hips);
     }
-  }
-  if (extras.includes('glasses')) {
-    const frame = new THREE.MeshStandardMaterial({ color: 0xd9d9de, roughness: 0.25 });
-    const g = new THREE.Group();
-    const r = w * 0.13, eyeY = box.min.y + h * 0.42;
-    for (const sx of [-1, 1]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, r * 0.14, 8, 24), frame);
-      ring.position.x = sx * r * 1.2;
-      g.add(ring);
-    }
-    const bridge = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.12, r * 0.12, r * 0.5, 6), frame);
-    bridge.rotation.z = Math.PI / 2;
-    g.add(bridge);
-    place(g, c.x, eyeY, front - r * 0.1);
   }
 }
 

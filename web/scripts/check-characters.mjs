@@ -33,7 +33,7 @@ try {
   const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.result?.value;
   const shot = async (name) => writeFileSync(join(dir, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'));
   await send('Runtime.enable');
-  await send('Emulation.setDeviceMetricsOverride', { width: 820, height: 1180, deviceScaleFactor: 2, mobile: true });
+  await send('Emulation.setDeviceMetricsOverride', { width: 820, height: 1180, deviceScaleFactor: Number(process.env.DSF ?? 2), mobile: true });
 
   for (const c of chars) {
     await send('Page.navigate', { url: `${base}?char=${c}&debug=1` });
