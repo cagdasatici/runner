@@ -35,6 +35,19 @@ describe('messes', () => {
     for (const m of t.messes) {
       expect(t.obstacles.some((o) => o.lane === m.lane && o.z < m.z + 4 && o.z + obstacleLength(o) > m.z - 4)).toBe(false);
       expect(t.coins.some((c) => c.lane === m.lane && Math.abs(c.z - m.z) < 1.5)).toBe(false);
+      expect(t.pickups.some((p) => p.lane === m.lane && Math.abs(p.z - m.z) < 3)).toBe(false);
+    }
+  });
+  it('endless messes respect the final track (no row added on top later)', () => {
+    const g = new RunSession(42n, { messes: true });
+    const seen = new Map<number, (typeof g.track.messes)[number]>();
+    for (let i = 0; i < 3000; i++) { g.tick(autopilotMove(g.state, g.track)); for (const m of g.track.messes) seen.set(m.id, m); }
+    expect(seen.size).toBeGreaterThan(0);
+    const t = g.track;
+    for (const m of t.messes) {
+      expect(t.obstacles.some((o) => o.lane === m.lane && o.z < m.z + 4 && o.z + obstacleLength(o) > m.z - 4)).toBe(false);
+      expect(t.coins.some((c) => c.lane === m.lane && Math.abs(c.z - m.z) < 1.5)).toBe(false);
+      expect(t.pickups.some((p) => p.lane === m.lane && Math.abs(p.z - m.z) < 3)).toBe(false);
     }
   });
   it('has a sane density', () => {

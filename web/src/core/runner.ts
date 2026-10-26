@@ -1,6 +1,7 @@
 // One-to-one port of GameCore/Sources/GameCore/Runner.swift. Keep the step order identical:
+// TODO: port messes to GameCore (Swift) when the iOS app gets them.
 // move → sideways → vertical → slide timer → forward → tick → collisions → coins.
-import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, type MessKind, type ObstacleKind, type PickupKind } from './track';
+import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, rowZ, type MessKind, type ObstacleKind, type PickupKind } from './track';
 import { MESS_TICKS, placeMesses, stepsOn } from './messes';
 
 export type Move = 'none' | 'left' | 'right' | 'up' | 'down';
@@ -351,8 +352,11 @@ export class RunSession {
 
   private placeMesses(): void {
     if (!this.messes) return;
-    placeMesses(this.track, this.seed, this.messHorizon, this.state.z + RunSession.generateAhead);
-    this.messHorizon = this.state.z + RunSession.generateAhead;
+    // Only place where the track is final: rows beyond the frontier may still add things within 4 m (obstacle reach) of a slot.
+    const to = Math.min(this.state.z + RunSession.generateAhead, rowZ(this.track.rowsGenerated) - 8);
+    if (to <= this.messHorizon) return;
+    placeMesses(this.track, this.seed, this.messHorizon, to);
+    this.messHorizon = to;
   }
 
   tick(move: Move, boost = false): void {

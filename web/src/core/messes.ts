@@ -19,13 +19,12 @@ export function hash01(seed: number, slot: number, salt = 0): number {
 }
 
 /** Adds messes for every slot whose z is in [zFrom, zTo). Idempotent per slot (skips ids already present). */
-export function placeMesses(track: Track, seed: number, zFrom: number, zTo: number, maxZ = Infinity): void {
+export function placeMesses(track: Track, seed: number, zFrom: number, zTo: number): void {
   const have = new Set(track.messes.map((m) => m.id));
   const first = Math.max(0, Math.ceil((zFrom - MESS_FIRST_Z) / MESS_SLOT));
   for (let k = first; ; k++) {
     const z = MESS_FIRST_Z + k * MESS_SLOT;
     if (z >= zTo) break;
-    if (z > maxZ) break;
     const id = MESS_ID_BASE + k;
     if (have.has(id) || hash01(seed, k) >= MESS_CHANCE) continue;
     const lane = Math.floor(hash01(seed, k, 1) * 3);
