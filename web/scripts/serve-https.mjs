@@ -19,6 +19,7 @@ const TYPES = {
 
 /** sw.js, html and the manifest must always be re-checked so updates reach the iPad; hashed assets never change. */
 function cacheControl(path) {
+  if (path.endsWith('version.json') || path.endsWith('index.json')) return 'no-store';
   if (path.includes(`${sep}assets${sep}`)) return 'public, max-age=31536000, immutable';
   if (/\.(html|webmanifest)$/.test(path) || path.endsWith(`${sep}sw.js`)) return 'no-cache';
   return 'public, max-age=86400';

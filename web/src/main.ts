@@ -12,6 +12,7 @@ import type { Move } from './core/runner';
 import { tierFor } from './ui/tiers';
 import { loadPhotos, playPhotoWave } from './ui/photoWave';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
+import { applyUpdate, fetchRemote, isNewer, startUpdateWatcher } from './ui/update';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -34,6 +35,7 @@ const timers: number[] = [];
 const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
 let cancelWave: (() => void) | null = null;
 let kidPhotos: Promise<string[]> | null = null;
+let pendingRemote: string | null = null;
 // every screen change or new run goes through cancelTimers, so it also stops a running photo wave
 const cancelTimers = () => { while (timers.length) window.clearTimeout(timers.pop()); cancelWave?.(); cancelWave = null; };
 
@@ -140,7 +142,7 @@ const game = new Game($('gl'), {
     const d = characterById(game.character);
     const photos = kidPhotos;
     if (photos) photos.then((urls) => {
-      if (urls.length && (screen === 'hud' || screen === 'results') && current) {
+      if (photos === kidPhotos && urls.length && (screen === 'hud' || screen === 'results') && current) {
         cancelWave?.();
         cancelWave = playPhotoWave(urls, d.name, { onPop: (i) => { if (i % 3 === 0) audio.sfx('star'); }, onFinale: () => confetti(40, 1) });
       }
@@ -223,6 +225,7 @@ function show(s: typeof screen): void {
   $('hud').classList.toggle('hidden', s !== 'hud' && s !== 'over' && s !== 'results');
   $('over').classList.toggle('hidden', s !== 'over');
   $('results').classList.toggle('hidden', s !== 'results');
+  if ((s === 'menu' || s === 'map') && pendingRemote) applyUpdate(pendingRemote);
 }
 
 function goMenu(): void {
@@ -400,6 +403,26 @@ function syncMuteIcon(): void {
   $('icon-muted').classList.toggle('hidden', !audio.muted);
 }
 syncMuteIcon();
+// --- in-app updates ---
+$('version').textContent = `v ${__APP_LABEL__}`;
+navigator.clearAppBadge?.();
+const say = (text: string) => {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+};
+startUpdateWatcher({
+  canApply: () => screen === 'menu' || screen === 'map',
+  onAvailable: (_label, remote) => { pendingRemote = remote; $('update').classList.add('ready'); $('update').querySelector('.dot')?.classList.remove('hidden'); },
+});
+tapped('update', async () => {
+  if (!import.meta.env.PROD) return say('Dev build');
+  if (pendingRemote) return applyUpdate(pendingRemote);
+  const r = await fetchRemote();
+  if (!r) return say('No internet, try at home');
+  if (isNewer(__APP_VERSION__, r.version)) return applyUpdate(r.version);
+  say('You have the newest version ✓');
+});
 
 // --- swipes: one move per swipe, fired as soon as the finger has moved 24 px ---
 const SWIPE_PX = 24;
@@ -449,7 +472,7 @@ if (params.get('debug') === '1') {
   debugEl = document.createElement('div');
   debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000a;padding:4px 8px;z-index:9';
   document.body.appendChild(debugEl);
-  (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, unlocked: progress.unlocked, totalStars: progress.totalStars });
+  (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, version: __APP_VERSION__, unlocked: progress.unlocked, totalStars: progress.totalStars });
 }
 let fpsFrames = 0, fpsStart = performance.now();
 

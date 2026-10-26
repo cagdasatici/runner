@@ -25,6 +25,7 @@
         <svg id="icon-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <svg id="icon-muted" viewBox="0 0 24 24" class="hidden"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
       </button>
+      <button id="update" class="round" aria-label="Check for updates"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><i class="dot hidden"></i></button>
       <div class="title"><span>RUNNER</span></div>
       <div class="chips">
         <div class="chip"><svg viewBox="0 0 24 24" class="trophy"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.6l-6 3.3 1.3-6.7-5-4.7 6.8-.8z"/></svg><span><b id="total-stars">0</b> / 360</span></div>
@@ -47,6 +48,7 @@
         <div><svg viewBox="0 0 24 24"><path d="M12 21l-6-7h4V4h4v10h4z"/></svg>Roll</div>
         <div><svg viewBox="0 0 24 24"><path d="M13 2L5 14h6l-1 8 9-13h-6z"/></svg>Hold: Boost</div>
       </div>
+      <div id="version" class="version"></div>
     </section>
 
     <section id="map" class="screen hidden">
@@ -76,6 +78,7 @@
     <div id="streak" class="streak hidden"></div>
     <div id="landing" class="landing hidden"></div>
     <div id="toast" class="toast"></div>
+    <div id="updating" class="hidden"><div class="card"><div class="spin"></div>Getting the new version…</div></div>
     <div id="reaction" class="hidden"><span>EWWW!</span></div>
 
     <section id="over" class="screen hidden">

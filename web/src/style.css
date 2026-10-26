@@ -19,7 +19,16 @@ svg { width: 1em; height: 1em; fill: currentColor; }
 .round { position: absolute; top: calc(var(--top) + 20px); width: 58px; height: 58px; border-radius: 50%; border: 2px solid rgba(255,255,255,.6);
   background: rgba(255, 255, 255, 0.22); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
   color: #fff; font-size: 24px; display: grid; place-items: center; }
-#mute { right: 22px; } #exit { left: 22px; }
+#mute { right: 22px; } #exit, #update { left: 22px; }
+#update { position: absolute; }
+#update.ready { background: rgba(34, 197, 94, .75); border-color: #bbf7d0; }
+.dot { position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: #22c55e; border: 2px solid #fff; animation: dotpulse 1s ease-in-out infinite; }
+@keyframes dotpulse { 50% { transform: scale(1.5); } }
+.version { font-size: 11px; opacity: .5; color: #fff; }
+#updating { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(15, 12, 50, .8); }
+#updating .card { color: #fff; font-size: 22px; font-weight: 800; }
+.spin { width: 44px; height: 44px; border-radius: 50%; border: 6px solid rgba(255,255,255,.3); border-top-color: #fff; animation: spinr .8s linear infinite; }
+@keyframes spinr { to { transform: rotate(360deg); } }
 
 .title { display: flex; flex-direction: column; align-items: center; margin-top: 40px; transform: rotate(-4deg); line-height: 0.92; }
 .title span { font-size: clamp(56px, 11vmin, 104px); font-weight: 900; letter-spacing: 1px;
