@@ -34,11 +34,11 @@ try {
   const send = (method, params = {}) => new Promise((r) => { const n = ++id; pending.set(n, r); ws.send(JSON.stringify({ id: n, method, params })); });
   const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.result?.value;
   const shot = async (name) => writeFileSync(join(dir, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'));
-  /** Polls subwayRunnerDebug() until its screen is `want` (up to 60 s; the software renderer is slow). */
+  /** Polls runnerDebug() until its screen is `want` (up to 60 s; the software renderer is slow). */
   const waitScreen = async (want) => {
     for (let i = 0; i < 120; i++) {
       await sleep(500);
-      const d = await evaluate(`typeof subwayRunnerDebug === 'function' ? subwayRunnerDebug() : null`);
+      const d = await evaluate(`typeof runnerDebug === 'function' ? runnerDebug() : null`);
       if (d?.screen === want) return d;
     }
     return null;

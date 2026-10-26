@@ -51,4 +51,4 @@ const server = createServer(tls, (req, res) => {
     done(404);
   }
 });
-server.listen(port, '0.0.0.0', () => console.log(`Subway Runner serving ${root} on https://0.0.0.0:${port}`));
+server.listen(port, '0.0.0.0', () => console.log(`Runner serving ${root} on https://0.0.0.0:${port}`));

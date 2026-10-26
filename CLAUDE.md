@@ -1,4 +1,4 @@
-# Subway Runner
+# Runner
 
 ## Git
 

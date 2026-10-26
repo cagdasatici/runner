@@ -403,7 +403,7 @@ if (params.get('debug') === '1') {
   debugEl = document.createElement('div');
   debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000a;padding:4px 8px;z-index:9';
   document.body.appendChild(debugEl);
-  (window as unknown as { subwayRunnerDebug: () => unknown }).subwayRunnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, unlocked: progress.unlocked, totalStars: progress.totalStars });
+  (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, unlocked: progress.unlocked, totalStars: progress.totalStars });
 }
 let fpsFrames = 0, fpsStart = performance.now();
 

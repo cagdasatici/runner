@@ -1,13 +1,14 @@
-# Subway Runner: App Store Connect metadata
+# Runner: App Store Connect metadata
 
-- **App name:** Subway Runner (fallbacks if taken or rejected: Rail Dash Runner, Lane Hop Runner)
+- **App name:** Runner (fallbacks if taken or rejected: Rail Dash Runner, Lane Hop Runner)
+- **Note:** "Runner" alone is likely taken on the App Store; use a fallback at submission.
 - **Subtitle (<= 30 chars):** Swipe, jump, slide, collect!
 - **Category:** Primary Games, subcategory Arcade; secondary Family. Do NOT enrol in the Kids category.
 - **Price:** Free. **Availability:** all countries.
 - **Promotional text (<= 170 chars):**
   Dash down three railway lanes, jump hurdles, slide under bars, dodge trains and grab coins. How far can you run? Free, offline, no ads.
 - **Description (<= 4000 chars):**
-  Subway Runner is a fast, friendly endless runner. Your little runner dashes down three railway lanes and keeps getting faster. Can you beat your best score?
+  Runner is a fast, friendly endless runner. Your little runner dashes down three railway lanes and keeps getting faster. Can you beat your best score?
 
   HOW TO PLAY
   - Swipe left or right to change lanes.

@@ -46,13 +46,13 @@ try {
     await touch('touchStart', p.x, p.y);
     await touch('touchEnd');
   };
-  const t0 = (await evaluate('subwayRunnerDebug()')).tick;
+  const t0 = (await evaluate('runnerDebug()')).tick;
   await sleep(1000);
-  const t1 = (await evaluate('subwayRunnerDebug()')).tick;
+  const t1 = (await evaluate('runnerDebug()')).tick;
   await touch('touchStart', 410, 700);
   await sleep(1200);
   const boosting = await evaluate(`document.body.classList.contains('boosting')`);
-  const t2 = (await evaluate('subwayRunnerDebug()')).tick;
+  const t2 = (await evaluate('runnerDebug()')).tick;
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   writeFileSync(shotPath, Buffer.from(shot.result.data, 'base64'));
   await touch('touchEnd');

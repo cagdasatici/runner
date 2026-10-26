@@ -18,7 +18,6 @@ struct MenuView: View {
             VStack(spacing: 18) {
                 Spacer().frame(height: 90)
                 VStack(spacing: -14) {
-                    OutlinedTitle(text: "SUBWAY", size: 68)
                     OutlinedTitle(text: "RUNNER", size: 68)
                 }
                 .rotationEffect(.degrees(-4))

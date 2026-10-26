@@ -48,7 +48,7 @@ try {
   };
   await tap('#play');
   await sleep(1500);
-  const onMap = await evaluate('subwayRunnerDebug().screen');
+  const onMap = await evaluate('runnerDebug().screen');
   // drag the map down by 300 px like a finger (shows the worlds above), then check it scrolled
   const top0 = await evaluate(`document.getElementById('map-scroll').scrollTop`);
   await touch('touchStart', 410, 400);
@@ -59,13 +59,13 @@ try {
   console.log('map:', onMap, 'scrollTop', top0, '->', top1);
   await tap('.node[data-level="1"]');
   await sleep(1500);
-  const before = await evaluate('subwayRunnerDebug()');
+  const before = await evaluate('runnerDebug()');
   // swipe right in 5 small steps, like a finger
   await touch('touchStart', 300, 700);
   for (let i = 1; i <= 5; i++) { await touch('touchMove', 300 + i * 30, 700); await sleep(16); }
   await touch('touchEnd');
   await sleep(2500);
-  const after = await evaluate('subwayRunnerDebug()');
+  const after = await evaluate('runnerDebug()');
   console.log('before swipe:', JSON.stringify(before));
   console.log('after swipe: ', JSON.stringify(after));
   const shot = await send('Page.captureScreenshot', { format: 'png' });

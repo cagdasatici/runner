@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme/logo.svg" alt="Subway Runner" width="720">
+  <img src="docs/readme/logo.svg" alt="Runner" width="720">
 </p>
 
 <p align="center">
@@ -19,6 +19,8 @@
 Swipe left/right to change lanes, up to jump hurdles, down to roll under bars, and weave around trains. Play an **endless run** for a high score, or follow the **Journey**: a map of levels across themed worlds (Sunny City, Leafy Park, ...) with up to three golden stars per level.
 
 ## Two builds, one game
+
+The iOS target is still named SubwayRunner internally (bundle id unchanged); only the display name is Runner.
 
 | | Path | Stack | Status |
 |---|---|---|---|

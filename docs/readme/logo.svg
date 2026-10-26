@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Subway Runner">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-label="Runner">
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#2fa8f5"/><stop offset="1" stop-color="#bfe8ff"/>
@@ -32,10 +32,8 @@
     </g>
     <!-- title -->
     <g font-family="'Arial Rounded MT Bold','Avenir Next','Helvetica Neue',Arial,sans-serif" font-weight="900" text-anchor="middle" font-size="112" stroke-linejoin="round">
-      <text x="486" y="164" fill="#e8590c" stroke="#e8590c" stroke-width="14" transform="translate(0 7)">SUBWAY</text>
-      <text x="480" y="164" fill="#fff" stroke="#fff" stroke-width="4">SUBWAY</text>
-      <text x="486" y="272" fill="#e8590c" stroke="#e8590c" stroke-width="14" transform="translate(0 7)">RUNNER</text>
-      <text x="480" y="272" fill="#fff" stroke="#fff" stroke-width="4">RUNNER</text>
+      <text x="486" y="222" fill="#e8590c" stroke="#e8590c" stroke-width="14" transform="translate(0 7)">RUNNER</text>
+      <text x="480" y="222" fill="#fff" stroke="#fff" stroke-width="4">RUNNER</text>
     </g>
   </g>
 </svg>
