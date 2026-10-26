@@ -36,6 +36,10 @@ export interface CharacterDef {
   bigHead?: number;
   /** Cuts the beard out of the adventurer's hair mesh (it shares the Hair material). */
   beardless?: boolean;
+  /** Bella and Toby: poop and pee appear on the track. */
+  messes?: boolean;
+  /** Arel and Nora: file-name prefix of their photos in faces/ for the finish photo wave. */
+  photoSet?: string;
 }
 
 const animal = (id: string, name: string, height: number, extra: Partial<CharacterDef> = {}): CharacterDef => ({
@@ -65,17 +69,19 @@ export const CHARACTERS: readonly CharacterDef[] = [
   }),
   animal('fox', 'Rusty', 1.4),
   {
-    id: 'maltese', name: 'Bella', model: '', procedural: 'maltese', height: 1.1, slide: 'tuck', yaw: 0, runSpeed: 1.2,
+    id: 'maltese', name: 'Bella', model: '', procedural: 'maltese', height: 1.1, slide: 'tuck', yaw: 0, runSpeed: 1.2, messes: true,
     // clip names are only labels here: the procedural rig animates every key itself
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
   kid('arel', 'Arel', 1.3, {
+    photoSet: 'arel',
     bigHead: 1.3,
     face: { iris: 0x5a3a22, lip: 0xc4695f, smile: 'closed', hair: [0xb08a5a, 0xc9a574], style: 'messy', blush: 0.16, brow: 0x7a5a38, browThick: 0.017,
       photo: { url: `${import.meta.env.BASE_URL}faces/arel3.png`, eyes: [[121, 132], [170, 133]], mouth: [144, 187], mouthDrop: 0.36 } },
     recolor: { Hair: 0xb08a5a, Eyebrows: 0x6b5030, Green: 0x3a9d5d, LightGreen: 0x4fb46f, Brown: 0x334155, Brown2: 0x1e293b },
   }),
   kid('nora', 'Nora', 1.35, {
+    photoSet: 'nora',
     bigHead: 1.3,
     // Brown/Brown2 are the trousers: skin-coloured so the legs under the skirt read as bare; Green/LightGreen is the bodice
     recolor: { Hair: 0xa8774c, Eyebrows: 0x7a5a38, Green: 0xf4f4f6, LightGreen: 0xffffff, Brown: 0xf2c9a6, Brown2: 0xe8bb96 },
@@ -84,7 +90,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     extras: ['dress'],
   }),
   {
-    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1,
+    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1, messes: true,
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
 ];

@@ -1,4 +1,4 @@
-# Subway Runner: agent instructions
+# Runner: agent instructions
 
 ## Git
 

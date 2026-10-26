@@ -51,7 +51,7 @@ try {
     play: !!document.getElementById('play'), canvas: !!document.querySelector('canvas#gl'),
     scripts: performance.getEntriesByType('resource').length })`);
   console.log('offline reload:', JSON.stringify(page));
-  ok = sw?.active === 'activated' && sw.files.length >= 8 && page?.title === 'Subway Runner' && page.play && page.canvas;
+  ok = sw?.active === 'activated' && sw.files.length >= 8 && page?.title === 'Runner' && page.play && page.canvas;
   ws.close();
 } finally {
   proc.kill();

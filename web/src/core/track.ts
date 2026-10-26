@@ -52,12 +52,16 @@ export function obstacleLength(o: Obstacle): number {
   if (o.kind === 'ramp') return RAMP_LENGTH;
   return o.kind === 'train' ? TRAIN_LENGTH : THIN_LENGTH;
 }
+export type MessKind = 'poop' | 'pee';
+export interface Mess { id: number; kind: MessKind; lane: number; z: number }
+
 export const coinY = (c: Coin): number => c.y ?? COIN_Y;
 
 export class Track {
   obstacles: Obstacle[] = [];
   coins: Coin[] = [];
   pickups: Pickup[] = [];
+  messes: Mess[] = [];
   rowsGenerated = 0;
   private rng: SplitMix64;
   private nextID = 0;
@@ -67,11 +71,12 @@ export class Track {
   }
 
   /** Hand-made track for tests. Don't call generate() on it. */
-  static fixed(obstacles: Obstacle[], coins: Coin[] = [], pickups: Pickup[] = []): Track {
+  static fixed(obstacles: Obstacle[], coins: Coin[] = [], pickups: Pickup[] = [], messes: Mess[] = []): Track {
     const t = new Track(0n);
     t.obstacles = obstacles;
     t.coins = coins;
     t.pickups = pickups;
+    t.messes = messes;
     return t;
   }
 
@@ -88,6 +93,7 @@ export class Track {
     this.obstacles = this.obstacles.filter((o) => !(o.z + obstacleLength(o) < z - 5));
     this.coins = this.coins.filter((c) => !(c.z < z - 5));
     this.pickups = this.pickups.filter((p) => !(p.z < z - 5));
+    this.messes = this.messes.filter((m) => !(m.z < z - 5));
   }
 
   private addRow(row: number): void {

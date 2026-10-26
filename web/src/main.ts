@@ -10,7 +10,10 @@ import { Game, type PowerHud } from './game';
 import { CHARACTERS, characterById, saveCharacter, stepCharacter } from './gfx/characters';
 import type { Move } from './core/runner';
 import { tierFor } from './ui/tiers';
+import { loadPhotos, playPhotoWave } from './ui/photoWave';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
+import { disable as pushDisable, enable as pushEnable, isOn as pushIsOn, pushSupported, resubscribe, type Who } from './ui/push';
+import { applyUpdate, fetchRemote, isNewer, startUpdateWatcher } from './ui/update';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -31,7 +34,11 @@ let current = 0; // journey level being played (0 = endless run)
 let screen: 'menu' | 'map' | 'hud' | 'over' | 'results' = 'menu';
 const timers: number[] = [];
 const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-const cancelTimers = () => { while (timers.length) window.clearTimeout(timers.pop()); };
+let cancelWave: (() => void) | null = null;
+let kidPhotos: Promise<string[]> | null = null;
+let pendingRemote: string | null = null;
+// every screen change or new run goes through cancelTimers, so it also stops a running photo wave
+const cancelTimers = () => { while (timers.length) window.clearTimeout(timers.pop()); cancelWave?.(); cancelWave = null; };
 
 function newSeed(): bigint {
   if (fixedSeed && /^\d+$/.test(fixedSeed) && fixedSeed !== '0') return BigInt(fixedSeed);
@@ -95,6 +102,7 @@ function audioPower(p: { board: number; magnet: number; sneakers: number; double
   prevPow = { any, fly, landing: p.landing };
 }
 
+let lastMess: 'poop' | 'pee' = 'poop';
 const game = new Game($('gl'), {
   onBoost: (on) => { document.body.classList.toggle('boosting', on); audio.setBoost(on); },
   onCoinFly: flyCoin,
@@ -130,8 +138,41 @@ const game = new Game($('gl'), {
   },
   onFinish: (run) => showResults(run),
   // Optional hook owned by audio.ts; guarded so this compiles whether or not it exists yet.
-  onFinishLine: () => { audio.playFinishFanfare(); },
+  onFinishLine: () => {
+    audio.playFinishFanfare();
+    const d = characterById(game.character);
+    const photos = kidPhotos;
+    if (photos) photos.then((urls) => {
+      if (photos === kidPhotos && urls.length && (screen === 'hud' || screen === 'results') && current) {
+        cancelWave?.();
+        cancelWave = playPhotoWave(urls, d.name, { onPop: (i) => { if (i % 3 === 0) audio.sfx('star'); }, onFinale: () => confetti(40, 1) });
+      }
+    });
+  },
   onPower: (p) => { renderPowers(p); audioPower(p); },
+  onMess: (kind) => {
+    lastMess = kind;
+    const el = $('toast');
+    el.textContent = kind === 'poop' ? 'Ewww, poop! 💩' : 'Oops, a puddle! 💦';
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    audio.sfx(kind === 'poop' ? 'splat' : 'splash');
+    later(180, () => audio.sfx('laugh'));
+  },
+  onMessClear: () => {
+    const el = $('toast');
+    el.textContent = 'Bath time! 🛁';
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    audio.sfx('bubbles');
+  },
+  onReaction: (rect) => {
+    const el = $('reaction');
+    if (!rect) { el.classList.add('hidden'); return; }
+    el.style.left = `${rect.left}px`; el.style.top = `${rect.top}px`;
+    el.style.width = el.style.height = `${rect.size}px`;
+    const label = el.firstElementChild as HTMLElement;
+    label.textContent = lastMess === 'pee' ? 'OOPS!' : 'EWWW!';
+    el.classList.remove('hidden');
+  },
   onToast: (text) => {
     const el = $('toast');
     el.textContent = text;
@@ -174,7 +215,7 @@ $('board-toggle').addEventListener('click', () => {
   try { localStorage.setItem(BOARD_KEY, startBoard ? '1' : '0'); } catch { /* ignore */ }
   paintBoardToggle();
 });
-const runOptions = () => ({ board: startBoard, friendly: true });
+const runOptions = () => ({ board: startBoard, friendly: true, messes: !!characterById(game.character).messes });
 
 function show(s: typeof screen): void {
   screen = s;
@@ -185,6 +226,7 @@ function show(s: typeof screen): void {
   $('hud').classList.toggle('hidden', s !== 'hud' && s !== 'over' && s !== 'results');
   $('over').classList.toggle('hidden', s !== 'over');
   $('results').classList.toggle('hidden', s !== 'results');
+  if ((s === 'menu' || s === 'map') && pendingRemote) applyUpdate(pendingRemote);
 }
 
 function goMenu(): void {
@@ -228,6 +270,7 @@ function resetHud(level: boolean): void {
 function playEndless(): void {
   cancelTimers();
   current = 0;
+  kidPhotos = null;
   resetHud(false);
   game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
@@ -239,6 +282,8 @@ function playLevel(n: number): void {
   current = n;
   resetHud(true);
   $('level-chip').textContent = levelName(n);
+  const d = characterById(game.character);
+  kidPhotos = d.photoSet ? loadPhotos(d.photoSet, d.face?.photo?.url) : null;
   game.startLevel(n, autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
   audio.playMusic({ mode: 'run', world: levelSpec(n).world });
@@ -319,6 +364,11 @@ const charFlag = params.get('char');
 if (charFlag && CHARACTERS.some((c) => c.id === charFlag)) game.setCharacter(charFlag);
 const poseFlag = params.get('pose');
 if (poseFlag) game.debugPose = poseFlag;
+// Debug only (?debug=1&mess=poop|pee): drop a mess 6 m ahead once the run has been going for 150 ticks.
+const messFlag = params.get('mess');
+if (params.get('debug') === '1' && (messFlag === 'poop' || messFlag === 'pee')) {
+  const timer = setInterval(() => { if (game.debugState().tick >= 150) { clearInterval(timer); game.debugMess(messFlag); } }, 20);
+}
 showCharacter();
 $('prev-char').addEventListener('click', (e) => { e.stopPropagation(); audio.unlock(); stepChar(-1); });
 $('next-char').addEventListener('click', (e) => { e.stopPropagation(); audio.unlock(); stepChar(1); });
@@ -354,6 +404,47 @@ function syncMuteIcon(): void {
   $('icon-muted').classList.toggle('hidden', !audio.muted);
 }
 syncMuteIcon();
+// --- in-app updates ---
+$('version').textContent = `v ${__APP_LABEL__}`;
+navigator.clearAppBadge?.();
+const say = (text: string) => {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+};
+startUpdateWatcher({
+  canApply: () => screen === 'menu' || screen === 'map',
+  onAvailable: (_label, remote) => { pendingRemote = remote; $('update').classList.add('ready'); $('update').querySelector('.dot')?.classList.remove('hidden'); },
+});
+tapped('update', async () => {
+  if (!import.meta.env.PROD) return say('Dev build');
+  if (pendingRemote) return applyUpdate(pendingRemote);
+  const r = await fetchRemote();
+  if (!r) return say('No internet, try at home');
+  if (isNewer(__APP_VERSION__, r.version)) return applyUpdate(r.version);
+  say('You have the newest version ✓');
+});
+
+// --- push news (Home Screen app only) ---
+const paintPush = (on: boolean) => { const b = $('push-toggle'); b.textContent = `🔔 News: ${on ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(on)); };
+if (pushSupported()) {
+  $('push-toggle').classList.remove('hidden');
+  void pushIsOn().then(paintPush).catch(() => {});
+  void resubscribe();
+}
+tapped('push-toggle', async () => {
+  if (await pushIsOn()) { await pushDisable(); paintPush(false); return say('News is OFF'); }
+  $('push-sheet').classList.remove('hidden');
+});
+$('push-cancel').addEventListener('click', () => $('push-sheet').classList.add('hidden'));
+$('push-sheet').querySelectorAll<HTMLElement>('[data-who]').forEach((b) => b.addEventListener('click', () => {
+  const p = pushEnable(b.dataset.who as Who); // requestPermission is called synchronously inside, before any await
+  $('push-sheet').classList.add('hidden');
+  void p.then((r) => {
+    paintPush(r === 'on');
+    say(r === 'on' ? 'News is ON 🔔' : r === 'denied' ? 'Notifications are off. Turn them on in Settings › Notifications › Runner' : 'Could not turn on news, try at home');
+  });
+}));
 
 // --- swipes: one move per swipe, fired as soon as the finger has moved 24 px ---
 const SWIPE_PX = 24;
@@ -403,7 +494,7 @@ if (params.get('debug') === '1') {
   debugEl = document.createElement('div');
   debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000a;padding:4px 8px;z-index:9';
   document.body.appendChild(debugEl);
-  (window as unknown as { subwayRunnerDebug: () => unknown }).subwayRunnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, unlocked: progress.unlocked, totalStars: progress.totalStars });
+  (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, version: __APP_VERSION__, unlocked: progress.unlocked, totalStars: progress.totalStars });
 }
 let fpsFrames = 0, fpsStart = performance.now();
 

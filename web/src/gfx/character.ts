@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Runner, startState, type RunnerState } from '../core/runner';
-import { laneX } from '../core/track';
+import { laneX, type MessKind } from '../core/track';
 import { animFor, characterById, CHARACTERS, type AnimKey, type CharacterDef } from './characters';
 import type { Materials } from './materials';
 import { PrimitiveFigure } from './primitiveFigure';
@@ -96,16 +96,30 @@ export class RunnerFigure {
   setCharacter(id: string): void {
     const def = characterById(id);
     this.wanted = def;
+    this.setMess(null);
     const cached = this.entries.get(def.id);
     if (cached) { this.swapTo(cached); return; }
     void this.load(def).then((e) => { if (e && this.wanted.id === def.id) this.swapTo(e); });
+  }
+
+  private get maltese(): MalteseFigure | null { return this.current?.proc instanceof MalteseFigure ? this.current.proc : null; }
+
+  /** Shows a poop/pee mess on the dog (no-op for the other characters). */
+  setMess(kind: MessKind | null): void { for (const e of this.entries.values()) if (e.proc instanceof MalteseFigure) e.proc.setMess(kind); }
+  updateMess(t: number, left01: number): void { this.maltese?.updateMess(t, left01); }
+
+  /** World position of the head (for the reaction close-up). */
+  headWorld(target: THREE.Vector3): THREE.Vector3 {
+    const m = this.maltese;
+    if (m) return m.headObject.getWorldPosition(target);
+    return target.set(this.rig.position.x, this.rig.position.y + (this.current?.def.height ?? 1.7) * 0.85, this.rig.position.z);
   }
 
   /** Fetches every model in the background so switching is instant. */
   preloadAll(): void { for (const c of CHARACTERS) void this.load(c); }
 
   /** Forget animation state at the start of a run. */
-  reset(): void { this.key = null; this.stumbleT = 0; this.lastStumbles = 0; this.pitch = 0; this.squash = 1; }
+  reset(): void { this.setMess(null); this.key = null; this.stumbleT = 0; this.lastStumbles = 0; this.pitch = 0; this.squash = 1; }
 
   private async load(def: CharacterDef): Promise<Entry | null> {
     const have = this.entries.get(def.id);

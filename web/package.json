@@ -1,5 +1,5 @@
 {
-  "name": "subway-runner-web",
+  "name": "runner-web",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "deploy": "scripts/deploy-local.sh"
+    "deploy": "scripts/deploy-local.sh",
+    "notify": "node scripts/push.mjs",
+    "faces:index": "node -e \"const fs=require('fs');const d='public/faces';if(fs.existsSync(d))fs.writeFileSync(d+'/index.json',JSON.stringify(fs.readdirSync(d).filter(n=>/\\.(png|jpe?g|webp)$/i.test(n))))\""
   },
   "dependencies": {
     "three": "0.186.1"
@@ -17,6 +19,7 @@
     "@types/three": "0.186.0",
     "typescript": "7.0.2",
     "vite": "8.3.5",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "web-push": "3.6.7"
   }
 }

@@ -7,10 +7,12 @@ import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
 import { addCoins, newStreak } from './core/streak';
 import { ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
-import { coinY, laneX, obstacleLength, type Coin, type Track } from './core/track';
+import { coinY, laneX, obstacleLength, type Coin, type MessKind, type Track } from './core/track';
+import { MESS_ID_BASE, MESS_TICKS } from './core/messes';
 import { RunnerFigure } from './gfx/character';
 import { characterById, loadCharacter } from './gfx/characters';
 import { CoinRenderer } from './gfx/coins';
+import { MessRenderer } from './gfx/messes';
 import { PowerVisuals } from './gfx/powerups';
 import { MagnetEffect } from './gfx/magnet';
 import { ParticlePool } from './gfx/effects';
@@ -28,6 +30,7 @@ const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 2048, LOW_SHADOW = 512;
 const VIEW_AHEAD = 115;
 const CELEBRATE_SECONDS = 2.8; // fireworks + celebration after the finish line, then the results card
 const COAST_SECONDS = 1.0;      // the runner jogs on past the line, then stops to celebrate
+const REACTION_SECONDS = 2.0; // the dog's face close-up after a mess
 const FIREWORK_COLORS = [0xf472b6, 0x60a5fa, 0xfde047, 0x4ade80, 0xfb923c, 0xc084fc];
 
 export interface GameEvents {
@@ -46,6 +49,10 @@ export interface GameEvents {
   onSpeed?(mps: number): void; // runner speed every frame (drives the adaptive music)
   onPower(p: PowerHud): void;
   onToast(text: string): void;
+  onMess?(kind: MessKind): void;
+  onMessClear?(): void;
+  /** The reaction close-up frame in CSS px (null = hide it). */
+  onReaction?(rect: { left: number; top: number; size: number } | null): void;
 }
 
 /** What the HUD needs to draw the power-up rings (fractions 0…1 of the time left) and the landing warning. */
@@ -124,6 +131,13 @@ export class Game {
   private power = new PowerVisuals();
   private lastHud = '';
   private lastCounters = [0, 0, 0, 0];
+  private lastMessCount = 0;
+  private lastMessTicks = 0;
+  private reactionT = 0;
+  private stinkT = 0;
+  private messes = new MessRenderer();
+  private reactionCam = new THREE.PerspectiveCamera(32, 1, 0.05, 20);
+  private headPos = new THREE.Vector3();
   private stars = new GoldenStarRenderer();
   private finishArch: THREE.Group | null = null;
   private dust = new ParticlePool(160, false);
@@ -180,7 +194,7 @@ export class Game {
     this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
     this.figure.preloadAll();
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.stars.group, this.dust.points, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -227,6 +241,7 @@ export class Game {
     this.setBoost(false);
     this.mode = 'menu';
     this.play = null;
+    this.endMess();
     this.clearDynamic();
     this.clearSegments();
     this.applyTheme(MENU_THEME);
@@ -263,6 +278,9 @@ export class Game {
     this.lastJumpTick = -100;
     this.lastHud = '';
     this.lastCounters = [0, 0, 0, 0];
+    this.lastMessCount = this.lastMessTicks = 0;
+    this.reactionT = 0;
+    this.events.onReaction?.(null);
     this.clearDynamic();
     this.clearSegments();
     const level = play.level;
@@ -334,7 +352,50 @@ export class Game {
     this.env.tick(this.time, this.camera);
     this.renderer.info.reset();
     this.post.render(this.scene, this.camera);
+    if (this.reactionT > 0 && this.mode === 'playing') {
+      this.reactionT = Math.max(0, this.reactionT - dt);
+      this.renderReaction();
+    } else if (this.reactionT === 0 && this.reactionShown) this.hideReaction();
     this.adaptQuality(dt);
+  }
+
+  /** Drops all mess state: the close-up, the dog's poop/fur/bath (menu, crash and finish call this). */
+  private endMess(): void {
+    this.reactionT = 0;
+    this.hideReaction();
+    this.figure.setMess(null);
+  }
+
+  private reactionShown = false;
+  private hideReaction(): void { this.reactionShown = false; this.events.onReaction?.(null); }
+
+  /** A 2 s close-up of the dog's face in a rounded frame at the top centre (see #reaction in style.css). */
+  private renderReaction(): void {
+    const r = this.renderer, w = window.innerWidth, h = window.innerHeight;
+    const size = Math.round(Math.min(w, h) * 0.34), left = Math.round((w - size) / 2), top = Math.round(h * 0.13);
+    this.figure.headWorld(this.headPos);
+    this.reactionCam.position.set(this.headPos.x + 0.35, this.headPos.y + 0.12, this.headPos.z - 1.15); // in front: the dog runs toward -z
+    this.reactionCam.lookAt(this.headPos);
+    this.reactionCam.aspect = 1; this.reactionCam.updateProjectionMatrix();
+    const autoClear = r.autoClear;
+    r.setRenderTarget(null);
+    r.setScissorTest(true);
+    r.setScissor(left, h - top - size, size, size);
+    r.setViewport(left, h - top - size, size, size);
+    r.autoClear = true;
+    r.render(this.scene, this.reactionCam);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, w, h);
+    r.autoClear = autoClear;
+    this.reactionShown = true;
+    this.events.onReaction?.(this.reactionT > 0 ? { left, top, size } : null);
+  }
+
+  /** Debug/test only (?debug=1&mess=poop|pee): puts a mess of this kind 6 m ahead of the runner, in its lane. */
+  debugMess(kind: MessKind): void {
+    const p = this.play;
+    if (!p) return;
+    p.track.messes.push({ id: MESS_ID_BASE + 999999, kind, lane: p.state.lane, z: p.state.z + 6 });
   }
 
   /** Forget the frame clock (after the tab was hidden) so the next frame doesn't jump. */
@@ -344,10 +405,11 @@ export class Game {
   triangles(): number { return this.renderer.info.render.triangles; }
 
   /** Read-only snapshot for automated checks (exposed only with ?debug=1). */
-  debugState(): { mode: string; lane: number; tick: number; score: number; crashed: boolean; level: number; finished: boolean; stars: number } {
+  debugState(): { mode: string; lane: number; tick: number; score: number; crashed: boolean; level: number; finished: boolean; stars: number; messes: number; messTicks: number } {
     const s = this.play?.state, l = this.play?.level;
     return { mode: this.mode, lane: s?.lane ?? -1, tick: s?.tick ?? 0, score: s ? score(s) : 0, crashed: s?.crashed ?? false,
-      level: l?.level.spec.n ?? 0, finished: l?.finished ?? false, stars: l?.starsTaken.size ?? 0 };
+      level: l?.level.spec.n ?? 0, finished: l?.finished ?? false, stars: l?.starsTaken.size ?? 0,
+      messes: this.play?.track.messes.length ?? 0, messTicks: s?.messTicks ?? 0 };
   }
 
   private nextMove(): Move {
@@ -385,6 +447,7 @@ export class Game {
       if (level.finished) {
         if (this.finishT < 0) {
           this.finishT = 0;
+          this.endMess();
           this.glow.burst(s.x, 2.5, -level.level.finishZ, 120, { color: 0xfde047, speed: 6, life: 0.9, size: 0.3, gravity: 4, colorJitter: 0.8 });
           this.confetti.burst(0, 6, -level.level.finishZ, 220, { color: 0xffffff, palette: [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xffffff], speed: 7, life: 1.8, size: 0.34, gravity: 5, dir: [0, 0.7, 0.3], spread: 1.2 });
           this.events.onFinishLine?.(level);
@@ -408,8 +471,26 @@ export class Game {
     else if (s.boardBreaks !== bb) { this.events.onToast('Board saved you!'); this.glow.burst(s.x, s.y + 0.5, -s.z, 70, { color: 0x5eead4, speed: 5, life: 0.6, size: 0.28, gravity: 4, colorJitter: 0.5 }); this.shake = 0.2; }
     else if (s.stumbles !== sb) { this.events.onToast('Oof! Keep going!'); this.shake = 0.25; }
     this.lastCounters = [s.nearMisses, s.combos, s.boardBreaks, s.stumbles];
+    if (s.messes !== this.lastMessCount) {
+      this.lastMessCount = s.messes;
+      if (s.messKind) {
+        this.figure.setMess(s.messKind);
+        this.reactionT = REACTION_SECONDS;
+        this.shake = 0.15;
+        const brown = s.messKind === 'poop';
+        this.glow.burst(s.x, 0.3, -s.z, 40, { color: brown ? 0x7a4a24 : 0xf2d43a, speed: 4, life: 0.5, size: 0.22, gravity: 9, colorJitter: 0.2 });
+        this.events.onMess?.(s.messKind);
+      }
+    }
+    if (this.lastMessTicks > 0 && s.messTicks === 0) {
+      this.figure.setMess(null);
+      this.sparkles.burst(s.x, s.y + 0.6, -s.z, 40, { color: 0xffffff, speed: 3, life: 0.8, size: 0.32 });
+      this.events.onMessClear?.();
+    }
+    this.lastMessTicks = s.messTicks;
     if (s.crashed && !this.crashHandled) {
       this.crashHandled = true;
+      this.endMess();
       this.shake = 0.28;
       this.glow.burst(s.x, s.y + 1, -s.z - 0.5, 90, { color: 0xfff3b0, speed: 5, life: 0.7, size: 0.3, gravity: 6, colorJitter: 0.6 });
       this.events.onCrash(sc, s.coins);
@@ -485,6 +566,7 @@ export class Game {
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
     const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
+    this.messes.update(track.messes.filter((m) => !s.collected.has(m.id) && m.z < s.z + VIEW_AHEAD && m.z > s.z - 5), this.time);
     this.power.update(vs, track.pickups, this.time, VIEW_AHEAD, this.frameDt, this.glow);
     const celebrating = !!p.level?.finished && this.finishT >= COAST_SECONDS;
     if (this.debugPose === 'celebrate') this.figure.celebrate(this.time % 3, this.frameDt, vs);
@@ -494,6 +576,15 @@ export class Game {
     this.figure.root.visible = !(s.iframes > 0 && !s.crashed && s.fly === 0 && Math.floor(this.time * 14) % 2 === 0);
     if (s.fly > 0 && this.boost && !s.crashed) { // lightning: streaks of light rushing past
       for (let k = 0; k < 2; k++) this.glow.burst(s.x + (Math.random() - 0.5) * 7, s.y + Math.random() * 4, -s.z - 14 - Math.random() * 8, 1, { color: k ? 0xfde047 : 0x67e8f9, speed: 1, life: 0.25, size: 0.22, dir: [0, 0, 1], spread: 0.1 });
+    }
+    if (s.messTicks > 0 && !s.crashed) {
+      this.figure.updateMess(this.time, s.messTicks / MESS_TICKS);
+      this.stinkT -= this.frameDt;
+      if (this.stinkT <= 0) {
+        this.stinkT = 0.15;
+        if (s.messKind === 'poop') this.glow.burst(s.x + (Math.random() * 0.4 - 0.2), s.y + 1.0, -s.z, 1, { color: 0x9acd32, speed: 0.8, life: 0.7, size: 0.18, gravity: -2, dir: [0, 1, 0], spread: 0.3 });
+        else this.glow.burst(s.x + (Math.random() * 0.4 - 0.2), s.y + 0.3, -s.z, 1, { color: 0xf2d43a, speed: 0.5, life: 0.4, size: 0.12, gravity: 8 });
+      }
     }
     this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
@@ -541,6 +632,7 @@ export class Game {
     this.power.clear();
     this.popped.clear();
     this.coins.clearPops();
+    this.messes.clear();
     this.coins.update([], 0, 0);
     this.dust.clear();
     this.glow.clear();

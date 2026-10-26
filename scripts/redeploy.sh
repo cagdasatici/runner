@@ -6,7 +6,7 @@
 #   scripts/redeploy.sh --test   # runs the tests first
 set -euo pipefail
 REPO="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-TMP="$(mktemp -d)/subway-runner-main"
+TMP="$(mktemp -d)/runner-main"
 cleanup() { git -C "$REPO" worktree remove --force "$TMP" 2>/dev/null || true; }
 trap cleanup EXIT
 

@@ -31,10 +31,10 @@ try {
   const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value;
   const shot = async (name) => writeFileSync(join(dir, name), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).result.data, 'base64'));
   await send('Emulation.setDeviceMetricsOverride', { width: 820, height: 1180, deviceScaleFactor: 2, mobile: true });
-  const stats = async () => evaluate(`new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { if (++n < 20) requestAnimationFrame(f); else res({ ms: (performance.now() - t0) / 20, ...subwayRunnerDebug() }); }; requestAnimationFrame(f); })`);
+  const stats = async () => evaluate(`new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { if (++n < 20) requestAnimationFrame(f); else res({ ms: (performance.now() - t0) / 20, ...runnerDebug() }); }; requestAnimationFrame(f); })`);
   const shotAt = async (name, q) => {
     await send('Page.navigate', { url: base + q });
-    for (let i = 0; i < 60; i++) { await sleep(500); if (await evaluate(`typeof subwayRunnerDebug === 'function'`)) break; }
+    for (let i = 0; i < 60; i++) { await sleep(500); if (await evaluate(`typeof runnerDebug === 'function'`)) break; }
     await sleep(2500);
     await shot(name);
     const s = await stats();
