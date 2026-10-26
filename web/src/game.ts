@@ -241,6 +241,7 @@ export class Game {
     this.setBoost(false);
     this.mode = 'menu';
     this.play = null;
+    this.endMess();
     this.clearDynamic();
     this.clearSegments();
     this.applyTheme(MENU_THEME);
@@ -358,6 +359,13 @@ export class Game {
     this.adaptQuality(dt);
   }
 
+  /** Drops all mess state: the close-up, the dog's poop/fur/bath (menu, crash and finish call this). */
+  private endMess(): void {
+    this.reactionT = 0;
+    this.hideReaction();
+    this.figure.setMess(null);
+  }
+
   private reactionShown = false;
   private hideReaction(): void { this.reactionShown = false; this.events.onReaction?.(null); }
 
@@ -439,6 +447,7 @@ export class Game {
       if (level.finished) {
         if (this.finishT < 0) {
           this.finishT = 0;
+          this.endMess();
           this.glow.burst(s.x, 2.5, -level.level.finishZ, 120, { color: 0xfde047, speed: 6, life: 0.9, size: 0.3, gravity: 4, colorJitter: 0.8 });
           this.confetti.burst(0, 6, -level.level.finishZ, 220, { color: 0xffffff, palette: [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xffffff], speed: 7, life: 1.8, size: 0.34, gravity: 5, dir: [0, 0.7, 0.3], spread: 1.2 });
           this.events.onFinishLine?.(level);
@@ -481,6 +490,7 @@ export class Game {
     this.lastMessTicks = s.messTicks;
     if (s.crashed && !this.crashHandled) {
       this.crashHandled = true;
+      this.endMess();
       this.shake = 0.28;
       this.glow.burst(s.x, s.y + 1, -s.z - 0.5, 90, { color: 0xfff3b0, speed: 5, life: 0.7, size: 0.3, gravity: 6, colorJitter: 0.6 });
       this.events.onCrash(sc, s.coins);
