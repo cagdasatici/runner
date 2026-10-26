@@ -2,7 +2,9 @@
 // a topknot with a pink bow. Faces -z, paws on y = 0, ~1.1 m tall at the topknot (game scale, like the other animals).
 // Animated entirely in code: gallop, jump, crawl (belly down), crash, idle, celebrate (hop + tail wag).
 import * as THREE from 'three';
+import type { MessKind } from '../core/track';
 import type { AnimKey } from './characters';
+import { makePoop } from './messes';
 
 export type ProcKey = AnimKey | 'celebrate';
 
@@ -55,12 +57,22 @@ export class MalteseFigure implements ProceduralRig {
   private tail = new THREE.Group();
   private tongue: THREE.Mesh;
   private lids: THREE.Mesh[] = [];
+  private fur: THREE.MeshPhysicalMaterial;
+  private furShade: THREE.MeshPhysicalMaterial;
+  private furOrig: [THREE.Color, THREE.Color];
+  private poopGroup: THREE.Group | null = null;
+  private flies: { g: THREE.Group; wings: THREE.Mesh[]; w: number }[] = [];
+  private peeGroup: THREE.Group | null = null;
+  private drips: THREE.Mesh[] = [];
+  private bath: THREE.Group | null = null;
+  private bubbles: THREE.Mesh[] = [];
 
   /** senior: "Toby", a 13-year-old male: creamier coat, no bow, a blue collar with a tag. */
   constructor(opts: { senior?: boolean } = {}) {
     const senior = opts.senior ?? false;
-    const fur = new THREE.MeshPhysicalMaterial({ color: senior ? 0xf6f0e4 : 0xfbf8f1, roughness: 0.92, sheen: 1, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xfff4e0) });
-    const furShade = new THREE.MeshPhysicalMaterial({ color: 0xefe8da, roughness: 0.95, sheen: 0.8, sheenColor: new THREE.Color(0xffffff) });
+    const fur = this.fur = new THREE.MeshPhysicalMaterial({ color: senior ? 0xf6f0e4 : 0xfbf8f1, roughness: 0.92, sheen: 1, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xfff4e0) });
+    const furShade = this.furShade = new THREE.MeshPhysicalMaterial({ color: 0xefe8da, roughness: 0.95, sheen: 0.8, sheenColor: new THREE.Color(0xffffff) });
+    this.furOrig = [fur.color.clone(), furShade.color.clone()];
     const black = new THREE.MeshStandardMaterial({ color: 0x0b0b0f, roughness: 0.18, metalness: 0 });
     const shine = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const pink = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.45 });
@@ -139,6 +151,125 @@ export class MalteseFigure implements ProceduralRig {
     this.body.add(this.tail);
     [[0, 0.06, 0.04, 0.09], [0, 0.16, 0.0, 0.1], [0, 0.22, -0.1, 0.1]].forEach(([x, y, z, r], i) =>
       this.tail.add(mk(fluffGeo(r, 30 + i, 0.3, 20, 14), fur, x, y, z, 1, 1, 1.2)));
+  }
+
+  /** The head group, for the reaction close-up camera. */
+  get headObject(): THREE.Object3D { return this.head; }
+
+  /** Shows the mess on the dog (poop on the head, or yellow fur and drips); null cleans it all up and restores the fur. */
+  setMess(kind: MessKind | null): void {
+    if (kind === 'poop' && !this.poopGroup) this.poopGroup = this.buildPoop();
+    if (kind === 'pee' && !this.peeGroup) this.peeGroup = this.buildPee();
+    if (this.poopGroup) this.poopGroup.visible = kind === 'poop';
+    if (this.peeGroup) this.peeGroup.visible = kind === 'pee';
+    if (kind === 'pee') {
+      const yellow = new THREE.Color(0xf2df74);
+      this.fur.color.lerpColors(this.furOrig[0], yellow, 0.55);
+      this.furShade.color.lerpColors(this.furOrig[1], yellow, 0.55);
+    } else {
+      this.fur.color.copy(this.furOrig[0]);
+      this.furShade.color.copy(this.furOrig[1]);
+    }
+    if (kind === null && this.bath) this.bath.visible = false;
+  }
+
+  private buildPoop(): THREE.Group {
+    const g = new THREE.Group();
+    const top = makePoop(0.45);
+    top.position.set(0, 0.2, 0);
+    top.rotation.z = 0.25;
+    g.add(top);
+    const m = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.55 });
+    ([[-0.09, -0.04, -0.3, 0.05], [0.1, -0.1, -0.26, 0.04], [0.0, 0.0, -0.215, 0.06]] as const).forEach(([x, y, z, r]) => {
+      const sp = mk(new THREE.SphereGeometry(r, 12, 8), m, x, y, z, 1, 1, 0.4);
+      g.add(sp);
+    });
+    const fly = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const wing = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false });
+    for (let i = 0; i < 3; i++) {
+      const f = new THREE.Group();
+      f.add(new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6), fly));
+      const wings = [-1, 1].map((x) => {
+        const w = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 0.02), wing);
+        w.position.set(0.015 * x, 0.012, 0);
+        w.rotation.x = -Math.PI / 2;
+        f.add(w);
+        return w;
+      });
+      g.add(f);
+      this.flies.push({ g: f, wings, w: [7, -9, 11][i] });
+    }
+    this.head.add(g);
+    return g;
+  }
+
+  private buildPee(): THREE.Group {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xf2d43a, roughness: 0.1, transparent: true, opacity: 0.9 });
+    const geo = new THREE.SphereGeometry(0.03, 10, 8);
+    ([[-0.14, -0.3, -0.3], [0.14, -0.3, -0.3], [-0.12, -0.32, 0.3], [0.12, -0.32, 0.3]] as const).forEach(([x, y, z]) => {
+      const d = new THREE.Mesh(geo, mat);
+      d.position.set(x, y, z);
+      d.userData.base = y;
+      g.add(d);
+      this.drips.push(d);
+    });
+    this.body.add(g);
+    return g;
+  }
+
+  private buildBath(): THREE.Group {
+    const g = new THREE.Group();
+    const tubMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, side: THREE.DoubleSide });
+    const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.52, 0.36, 28, 1, true), tubMat);
+    tub.position.y = 0.18;
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(0.52, 28).rotateX(-Math.PI / 2), tubMat);
+    floor.position.y = 0.01;
+    const water = new THREE.Mesh(new THREE.CircleGeometry(0.58, 28).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x7dd3fc, roughness: 0.1, transparent: true, opacity: 0.7 }));
+    water.position.y = 0.3;
+    g.add(tub, floor, water);
+    const bm = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, transparent: true, opacity: 0.8 });
+    for (let i = 0; i < 8; i++) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.05 + (i % 3) * 0.025, 12, 8), bm);
+      const a = i * 2.4;
+      b.userData = { x: Math.cos(a) * 0.4 * ((i % 4) / 4 + 0.4), z: Math.sin(a) * 0.4 * ((i % 4) / 4 + 0.4), off: i / 8 };
+      g.add(b);
+      this.bubbles.push(b);
+    }
+    this.root.add(g);
+    return g;
+  }
+
+  /** Per-frame life of the mess: flies orbit, drips slide, and in the last 15 % of the time the dog sits in a bubble bath. */
+  updateMess(t: number, left01: number): void {
+    if (this.poopGroup?.visible) {
+      this.flies.forEach((f, i) => {
+        const a = t * f.w + i * 2.1;
+        f.g.position.set(Math.cos(a) * 0.28, 0.05 + 0.06 * Math.sin(t * 5 + i), Math.sin(a) * 0.28);
+        const flap = 0.5 + 0.5 * Math.abs(Math.sin(t * 60));
+        f.wings.forEach((w) => { w.scale.y = flap; });
+      });
+    }
+    if (this.peeGroup?.visible) {
+      for (const d of this.drips) {
+        const k = ((t + (d.position.x > 0 ? 0.3 : 0)) % 0.6) / 0.6;
+        d.position.y = (d.userData.base as number) - 0.15 * k;
+        d.scale.setScalar(1 - 0.5 * k);
+      }
+    }
+    const bathing = left01 < 0.15 && left01 > 0;
+    if (bathing && !this.bath) this.bath = this.buildBath();
+    if (this.bath) {
+      this.bath.visible = bathing;
+      if (bathing) {
+        for (const b of this.bubbles) {
+          const k = (t * 0.8 + (b.userData.off as number)) % 1;
+          b.position.set(b.userData.x as number, 0.3 + k * 0.55, b.userData.z as number);
+          b.scale.setScalar(k > 0.85 ? 0 : 1);
+        }
+      }
+    }
   }
 
   animate(key: ProcKey, t: number, phase: number, vy: number): void {

@@ -620,6 +620,24 @@ export class MusicEngine {
         }
         break;
       }
+      case 'splat':
+        this.noiseHit({ t, dur: 0.16, type: 'lowpass', f: 420, peak: 0.22, bus: b, wet: 0.1, prio: 3 });
+        this.blip({ t, f: 170, f2: 55, type: 'sine', dur: 0.18, peak: 0.18, bus: b, prio: 3 });
+        break;
+      case 'splash':
+        this.noiseHit({ t, dur: 0.22, type: 'bandpass', f: 1800, peak: 0.14, bus: b, prio: 3 });
+        this.noiseHit({ t: t + 0.06, dur: 0.15, type: 'bandpass', f: 2600, peak: 0.14, bus: b, prio: 3 });
+        break;
+      case 'laugh':
+        for (let i = 0; i < 5; i++) {
+          const ti = t + i * 0.18, f = 300 - i * 18;
+          this.blip({ t: ti, f, f2: f * 0.8, type: 'triangle', dur: 0.11, att: 0.01, peak: 0.13 - i * 0.012, lp: 1100, detune: 12, bus: b, wet: 0.2, prio: 3 });
+          this.noiseHit({ t: ti, dur: 0.08, type: 'bandpass', f: 1200, peak: 0.05, bus: b, prio: 3 });
+        }
+        break;
+      case 'bubbles':
+        for (let i = 0; i < 9; i++) this.blip({ t: t + i * 0.07 + this.sfxRng.next() * 0.03, f: 600 + this.sfxRng.next() * 900, type: 'sine', dur: 0.06, peak: 0.08, bus: b, prio: 3 });
+        break;
       case 'click':
         this.blip({ t, f: 760, f2: 520, type: 'sine', dur: 0.05, peak: 0.12, bus: b, prio: 3 });
         break;

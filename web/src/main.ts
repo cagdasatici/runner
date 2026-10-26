@@ -95,6 +95,7 @@ function audioPower(p: { board: number; magnet: number; sneakers: number; double
   prevPow = { any, fly, landing: p.landing };
 }
 
+let lastMess: 'poop' | 'pee' = 'poop';
 const game = new Game($('gl'), {
   onBoost: (on) => { document.body.classList.toggle('boosting', on); audio.setBoost(on); },
   onCoinFly: flyCoin,
@@ -132,6 +133,29 @@ const game = new Game($('gl'), {
   // Optional hook owned by audio.ts; guarded so this compiles whether or not it exists yet.
   onFinishLine: () => { audio.playFinishFanfare(); },
   onPower: (p) => { renderPowers(p); audioPower(p); },
+  onMess: (kind) => {
+    lastMess = kind;
+    const el = $('toast');
+    el.textContent = kind === 'poop' ? 'Ewww, poop! 💩' : 'Oops, a puddle! 💦';
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    audio.sfx(kind === 'poop' ? 'splat' : 'splash');
+    later(180, () => audio.sfx('laugh'));
+  },
+  onMessClear: () => {
+    const el = $('toast');
+    el.textContent = 'Bath time! 🛁';
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    audio.sfx('bubbles');
+  },
+  onReaction: (rect) => {
+    const el = $('reaction');
+    if (!rect) { el.classList.add('hidden'); return; }
+    el.style.left = `${rect.left}px`; el.style.top = `${rect.top}px`;
+    el.style.width = el.style.height = `${rect.size}px`;
+    const label = el.firstElementChild as HTMLElement;
+    label.textContent = lastMess === 'pee' ? 'OOPS!' : 'EWWW!';
+    el.classList.remove('hidden');
+  },
   onToast: (text) => {
     const el = $('toast');
     el.textContent = text;
@@ -319,6 +343,11 @@ const charFlag = params.get('char');
 if (charFlag && CHARACTERS.some((c) => c.id === charFlag)) game.setCharacter(charFlag);
 const poseFlag = params.get('pose');
 if (poseFlag) game.debugPose = poseFlag;
+// Debug only (?debug=1&mess=poop|pee): drop a mess 6 m ahead once the run has been going for 150 ticks.
+const messFlag = params.get('mess');
+if (params.get('debug') === '1' && (messFlag === 'poop' || messFlag === 'pee')) {
+  const timer = setInterval(() => { if (game.debugState().tick >= 150) { clearInterval(timer); game.debugMess(messFlag); } }, 20);
+}
 showCharacter();
 $('prev-char').addEventListener('click', (e) => { e.stopPropagation(); audio.unlock(); stepChar(-1); });
 $('next-char').addEventListener('click', (e) => { e.stopPropagation(); audio.unlock(); stepChar(1); });

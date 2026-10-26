@@ -267,3 +267,8 @@ body.lightning::after { content: ''; position: fixed; inset: 0; pointer-events: 
 .streak { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); font-size: 30px; font-weight: 900; color: #fde047; -webkit-text-stroke: 2px #92400e; text-shadow: 0 4px 0 #92400e, 0 0 18px #fbbf24; z-index: 6; pointer-events: none; white-space: nowrap; }
 .streak.go { animation: streakgo 1.3s cubic-bezier(.2, 1.4, .4, 1) forwards; }
 @keyframes streakgo { 0% { transform: translateX(-50%) scale(0.2); opacity: 0; } 15% { transform: translateX(-50%) scale(1.15); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateX(-50%) translateY(-40px) scale(1); opacity: 0; } }
+
+/* dog mess reaction close-up: the 3D inset is drawn under this frame (see Game.renderReaction) */
+#reaction { position: fixed; border: 6px solid #fff; border-radius: 28px; box-shadow: 0 0 0 4px var(--ink), 0 10px 30px rgba(0,0,0,.35); pointer-events: none; z-index: 20; animation: reactPop .35s cubic-bezier(.2,1.6,.4,1); }
+#reaction span { position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%) rotate(-4deg); background: #84cc16; color: #fff; font-weight: 900; font-size: 26px; padding: 2px 14px; border-radius: 14px; -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; white-space: nowrap; }
+@keyframes reactPop { from { transform: scale(.2) rotate(-12deg); opacity: 0 } to { transform: scale(1) rotate(0); opacity: 1 } }
