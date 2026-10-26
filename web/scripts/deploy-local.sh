@@ -17,4 +17,5 @@ mkdir -p "$SITE/www/support" && cp ../docs/site/*.html "$SITE/www/support/"   # 
 cp scripts/serve-https.mjs "$SITE/serve-https.mjs"
 echo "Deployed to $SITE/www:"
 (cd "$SITE/www" && find . -type f | sort)
+if [ -n "${NOTIFY:-}" ]; then node scripts/push.mjs --body "$NOTIFY"; fi
 echo "Open https://$(scutil --get LocalHostName).local:8843/ on the iPad (home Wi-Fi)."

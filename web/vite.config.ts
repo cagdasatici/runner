@@ -28,6 +28,21 @@ self.addEventListener('activate', (e) => {
     .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
+self.addEventListener('push', (e) => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(Promise.all([
+    self.registration.showNotification(d.title || 'Runner', { body: d.body || 'Something new is waiting!', icon: './icons/icon-192.png', badge: './icons/icon-192.png', tag: 'runner-news', data: { url: d.url || './' } }),
+    self.navigator.setAppBadge ? self.navigator.setAppBadge(1).catch(() => {}) : Promise.resolve(),
+  ]));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+    const c = cs.find((w) => w.url.startsWith(self.registration.scope));
+    return c ? c.focus().then(() => c.navigate(url)) : self.clients.openWindow(url);
+  }));
+});
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   const p = new URL(e.request.url).pathname;

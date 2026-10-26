@@ -12,6 +12,7 @@ import type { Move } from './core/runner';
 import { tierFor } from './ui/tiers';
 import { loadPhotos, playPhotoWave } from './ui/photoWave';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
+import { disable as pushDisable, enable as pushEnable, isOn as pushIsOn, pushSupported, resubscribe, type Who } from './ui/push';
 import { applyUpdate, fetchRemote, isNewer, startUpdateWatcher } from './ui/update';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -423,6 +424,27 @@ tapped('update', async () => {
   if (isNewer(__APP_VERSION__, r.version)) return applyUpdate(r.version);
   say('You have the newest version ✓');
 });
+
+// --- push news (Home Screen app only) ---
+const paintPush = (on: boolean) => { const b = $('push-toggle'); b.textContent = `🔔 News: ${on ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(on)); };
+if (pushSupported()) {
+  $('push-toggle').classList.remove('hidden');
+  void pushIsOn().then(paintPush);
+  void resubscribe();
+}
+tapped('push-toggle', async () => {
+  if (await pushIsOn()) { await pushDisable(); paintPush(false); return say('News is OFF'); }
+  $('push-sheet').classList.remove('hidden');
+});
+$('push-cancel').addEventListener('click', () => $('push-sheet').classList.add('hidden'));
+$('push-sheet').querySelectorAll<HTMLElement>('[data-who]').forEach((b) => b.addEventListener('click', () => {
+  const p = pushEnable(b.dataset.who as Who); // requestPermission is called synchronously inside, before any await
+  $('push-sheet').classList.add('hidden');
+  void p.then((r) => {
+    paintPush(r === 'on');
+    say(r === 'on' ? 'News is ON 🔔' : r === 'denied' ? 'Notifications are off. Turn them on in Settings › Notifications › Runner' : 'Could not turn on news, try at home');
+  });
+}));
 
 // --- swipes: one move per swipe, fired as soon as the finger has moved 24 px ---
 const SWIPE_PX = 24;

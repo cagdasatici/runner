@@ -41,6 +41,7 @@
       <div class="modes">
         <button id="endless" class="chunky blue small">Endless run</button>
         <button id="board-toggle" class="chunky teal small" aria-pressed="true">🛹 Board: ON</button>
+        <button id="push-toggle" class="chunky teal small hidden" aria-pressed="false">🔔 News: OFF</button>
       </div>
       <div class="hints">
         <div><svg viewBox="0 0 24 24"><path d="M3 12l5-5v3h8V7l5 5-5 5v-3H8v3z"/></svg>Lanes</div>
@@ -79,6 +80,11 @@
     <div id="landing" class="landing hidden"></div>
     <div id="toast" class="toast"></div>
     <div id="updating" class="hidden"><div class="card"><div class="spin"></div>Getting the new version…</div></div>
+    <div id="push-sheet" class="hidden"><div class="card"><b>Whose iPad is this?</b>
+      <button class="chunky blue small" data-who="arel">Arel</button>
+      <button class="chunky blue small" data-who="nora">Nora</button>
+      <button class="chunky blue small" data-who="other">Someone else</button>
+      <button id="push-cancel" class="chunky teal small">Cancel</button></div></div>
     <div id="reaction" class="hidden"><span>EWWW!</span></div>
 
     <section id="over" class="screen hidden">
