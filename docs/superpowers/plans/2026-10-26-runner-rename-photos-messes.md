@@ -3,10 +3,13 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > **Target executor:** Claude Sonnet 5.5, low effort. Everything you need is in this file. Do not redesign; implement what is written. Where code is given, use it. Where only behaviour is given, the constants and file locations here are binding.
 
-**Goal (three changes, one branch):**
+**Goal (five changes, one branch):**
 1. **Rename** the game from "Subway Runner" to **"Runner"**: display name, web app, docs, GitHub repo, local folder.
 2. **Kid photo wave:** when **Arel** or **Nora** finishes a journey level, their photos fly across the screen in a bouncing wave, ending in one big "Go Arel!" / "Go Nora!" photo pop.
 3. **Dog messes:** when **Bella** or **Toby** is the runner, poop and pee puddles appear on the track. Running over one sticks it on the dog for **5.5 s** (poop on the head and muzzle with buzzing flies; pee as a yellow coat with drips), shows a **2 s close-up "reaction cam"** of the dog's face, plays a **cartoon laugh**, and ends with a **bath** (tub + bubbles). Messes never crash or slow the runner.
+
+4. **In-app updates:** the Home Screen app checks for a new build at launch and on every reopen, updates itself automatically on the menu/map, and has an update button plus a version label.
+5. **Push notifications:** each kid's iPad can turn on "News"; Dad sends a notification from the Mac (`npm run notify` or `NOTIFY=... npm run deploy`); tapping it opens the app, which then updates itself. Gated by a one-iPad test (Task 6.0).
 
 **Out of scope (do not build):** the wormhole / 5 s lightning-speed idea (stays in the backlog), any change to `App/` or `GameCore/` Swift code beyond the two display-name lines in Task 1, any new npm dependency.
 
@@ -14,15 +17,15 @@
 
 ## Executor Rules (read first, follow literally)
 
-1. Repo root on the Mac: `/Users/cagdas/Projects/Subway_Runner` (it is renamed to `/Users/cagdas/Projects/Runner` by the human **after** this plan, see Task 7). Web paths below are relative to `web/` unless they start with `../`.
+1. Repo root on the Mac: `/Users/cagdas/Projects/Subway_Runner` (it is renamed to `/Users/cagdas/Projects/Runner` by the human **after** this plan, see Task 9). Web paths below are relative to `web/` unless they start with `../`.
 2. Do the tasks in order. Run every "Run" step and compare with "Expected". **Never weaken, skip or delete an existing test, and never change existing golden numbers.** The obstacle/coin/pickup sequence of every endless seed and every level must stay byte-identical (messes are placed by a separate hash, never by the track RNG).
-3. Tech stack is pinned: three 0.186.1, @types/three 0.186.0, vite 8.3.5, vitest 5.0.5, typescript 7.0.2. Add no dependencies.
+3. Tech stack is pinned: three 0.186.1, @types/three 0.186.0, vite 8.3.5, vitest 5.0.5, typescript 7.0.2. Add no dependencies, except `web-push@3.6.7` as a dev dependency in Task 6.
 4. If a step still fails after 3 fix attempts, stop and report the exact command and output.
-5. Work on branch `feat/runner-photos-messes`. Commit at the end of each task with the given message. Push only in Task 6.
+5. Work on branch `feat/runner-photos-messes`. Commit at the end of each task with the given message. Push only in Task 8.
 6. Never use the names "Subway Surfers", "SYBO", "Jake", "Tricky", "Fresh", "hoverboard" or "Inspector".
 7. **Private photos never enter git.** `web/public/faces/` stays git-ignored. Never commit, print or upload a face picture.
 8. Use the headless-Chrome check scripts (`web/scripts/check-*.mjs`) with `localhost`, not `.local` names and not the in-app browser pane.
-9. Never run `mkcert -install`; never touch certificates, launchd, firewall or sleep settings.
+9. Never run `mkcert -install`; never touch certificates, launchd configuration, firewall or sleep settings. The only allowed launchd command is the service restart named in Task 6.
 
 ---
 
@@ -367,22 +370,184 @@
 
 ---
 
-## Task 5: Full verification and deploy
+## Task 5: In-app updates (the Home Screen app pulls the newest version)
 
-- [ ] **5.1** `npx tsc --noEmit && npm test && npm run build` → Expected: N0 + 14 passed; build OK; gzipped JS grows by less than 15 kB.
-- [ ] **5.2** Existing checks still pass: `node scripts/check-touch.mjs`, `check-journey.mjs`, `check-boost.mjs`, `check-offline.mjs` (title `Runner`).
-- [ ] **5.3** Grep for leaks: `git diff main --stat` shows no file under `web/public/faces`; `git ls-files | grep -i -E 'faces/|photo-'` → only source files (`src/gfx/face.ts`, `src/ui/photoWave.ts`, tests), no images.
-- [ ] **5.4** `npm run deploy` (runs tests, builds, copies to the home server, writes `faces/index.json`). Expected: the listing includes `faces/index.json` next to the photos.
-- [ ] **5.5** Commit any check-script additions: `test(web): headless checks for messes and the photo wave`
+### Problem
+The Home Screen app is served cache-first by the service worker. A new deploy changes the cache name, but iPadOS often resumes the app instead of relaunching it, so the kids keep playing the old build for days.
 
-## Task 6: GitHub
+### Behaviour (binding)
+- Every build carries a **build id** (the same base-36 timestamp as the cache name) and a human label like `26 Oct 20:15`.
+- The build writes `version.json` = `{ "version": "<id>", "label": "<label>" }`. It is **never** precached and never served from cache.
+- The app checks `version.json` (network only, `cache: 'no-store'`, 4 s timeout):
+  1. at launch;
+  2. whenever the app becomes visible again (`visibilitychange` → `visible`, which is how an iPad "reopen" looks);
+  3. every 10 minutes while on the menu or map.
+- If the remote id differs from the running one, an update is available:
+  - **On the menu or map:** apply it **automatically** right away, with a full-screen "Getting the new version…" card (spinner, 1–3 s).
+  - **During a run or on the results card:** never interrupt. Show the badge, and apply when the player next lands on the menu or map.
+  - Set the Home Screen icon badge: `navigator.setAppBadge?.(1)`. Clear it with `navigator.clearAppBadge?.()` after updating.
+- **Update button** on the menu, top right next to the mute button: a round ⟳ button.
+  - Normal: plain. Tap → check now; if nothing new, toast `You have the newest version ✓`.
+  - Update available: green, with a pulsing dot. Tap → apply now.
+  - Offline: toast `No internet, try at home`.
+- Tiny version label under the hints: `v 26 Oct 20:15` (so a parent can see which build an iPad runs).
+- **Applying an update:**
+  1. `reg.update()`;
+  2. delete **every** Cache Storage entry;
+  3. `location.replace('./?v=<remote id>')`.
+- **Never touch `localStorage`** (stars, best score, chosen character and board setting must survive). Test this.
 
-- [ ] **6.1** Rename the repo: `gh repo rename runner --repo cagdasatici/subway-runner --yes`. Expected: `✓ Renamed repository cagdasatici/runner`. GitHub keeps redirecting the old URL.
-- [ ] **6.2** `git remote set-url origin https://github.com/cagdasatici/runner.git && git remote -v`.
-- [ ] **6.3** `git push -u origin feat/runner-photos-messes`, then `gh pr create --base main --title "Runner: rename, kid photo wave, dog messes" --body-file <(printf '...')` with a short body listing the three changes and the "kept on purpose" table from Task 1.
-- [ ] **6.4** Report the PR URL. **Do not merge**: the human merges, then runs `scripts/redeploy.sh`.
+### Code
+- [ ] **5.1** `vite.config.ts`: compute once at the top: `const BUILD = Date.now().toString(36);` and `const LABEL = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Amsterdam' }).replace(',', '');`. Use `BUILD` as the cache suffix (replacing the local `version`). Add `define: { __APP_VERSION__: JSON.stringify(BUILD), __APP_LABEL__: JSON.stringify(LABEL) }` to the config. In `generateBundle`, also `this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: BUILD, label: LABEL }) })`. Do not add `version.json` to `FILES`.
+- [ ] **5.2** Declare the globals in `src/env.d.ts` (create it if missing, or add to the existing vite env file): `declare const __APP_VERSION__: string; declare const __APP_LABEL__: string;`. For vitest, add `define: { __APP_VERSION__: '"test"', __APP_LABEL__: '"test"' }` under `test` if tests import `update.ts`. Easiest: keep the globals out of the pure helpers.
+- [ ] **5.3** Service worker source in `vite.config.ts`. At the top of the `fetch` listener, after the method/origin check:
+  ```js
+  const p = new URL(e.request.url).pathname;
+  if (p.endsWith('/version.json') || p.includes('/api/') || p.endsWith('/faces/index.json')) return; // always network
+  ```
+- [ ] **5.4** `scripts/serve-https.mjs`, `cacheControl`: return `'no-store'` for paths ending in `version.json` or `index.json` (keep the other rules).
+- [ ] **5.5** Create `src/ui/update.ts`:
+  - pure `isNewer(local: string, remote: string | null | undefined): boolean` → `!!remote && remote !== local`;
+  - `fetchRemote(): Promise<{ version: string; label: string } | null>` (fetch with `AbortController` 4 s, `cache: 'no-store'`, URL `${import.meta.env.BASE_URL}version.json?t=${Date.now()}`, null on any failure);
+  - `applyUpdate(remote: string, deps = { caches, sw: navigator.serviceWorker, location })`: show `#updating`, then try `(await deps.sw?.getRegistration())?.update()` and ignore errors. Then `for (const k of await deps.caches.keys()) await deps.caches.delete(k);`, then `deps.location.replace('./?v=' + remote)`. The `deps` parameter exists so the test can pass fakes.
+  - `startUpdateWatcher(opts: { canApply: () => boolean; onAvailable: (label: string) => void })`: runs the three checks above. When an update is found and `canApply()`, call `applyUpdate`; else call `onAvailable` and set the icon badge.
+  - Skip everything in dev (`!import.meta.env.PROD`) except the button, which then just toasts `Dev build`.
+- [ ] **5.6** `index.html` menu: add `<button id="update" class="round" aria-label="Check for updates"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><i class="dot hidden"></i></button>` next to `#mute`. Add `<div id="version" class="version"></div>` after `.hints`. Add `<div id="updating" class="hidden"><div class="card"><div class="spin"></div>Getting the new version…</div></div>` at body level. CSS: position `#update` like `#mute` but mirrored to the other corner (if `#mute` is top right, put `#update` top left). `.dot` is a 12 px green circle with a pulse animation. `.version` is 11 px, 50 % opacity, white. `#updating` is a full-screen dim overlay (z-index 50) with a centred chunky card.
+- [ ] **5.7** `main.ts`: show `v ${__APP_LABEL__}` in `#version`. Wire the button as specified. Call `startUpdateWatcher({ canApply: () => screen === 'menu' || screen === 'map', onAvailable: () => $('update').classList.add('ready') })`. In `show(s)`, when switching to `'menu'` or `'map'` while an update is pending, apply it. Call `navigator.clearAppBadge?.()` at startup.
+- [ ] **5.8** Tests `tests/update.test.ts`:
+  1. `isNewer('a', 'b')` true; `isNewer('a', 'a')` false; `isNewer('a', null)` false.
+  2. `applyUpdate` with fakes: a fake caches holding 2 keys ends empty; `replace` is called once with `./?v=b`; a fake `localStorage` with `character=nora` and progress data is unchanged afterwards.
+  3. `applyUpdate` still deletes caches and reloads when `getRegistration` rejects.
+- [ ] **5.9 Run** `npx tsc --noEmit && npm test` → Expected: N0 + 17 passed.
+- [ ] **5.10 Check** (headless Chrome, production preview `npm run build && npx vite preview --port 4173`):
+  1. Open `http://localhost:4173/`, wait for the service worker to activate (`navigator.serviceWorker.controller` non-null after a reload).
+  2. Rebuild (new id) and restart preview.
+  3. Trigger `document.dispatchEvent(new Event('visibilitychange'))` while on the menu.
+  4. Expected within 6 s: the page reloads with `?v=`, `runnerDebug()` reports the new version (add `version: __APP_VERSION__` to the debug object), and a pre-set `localStorage.character` is unchanged.
+  
+  Add this as `scripts/check-update.mjs`.
+- [ ] **5.11** Commit: `feat(web): in-app update check, auto-apply on the menu, update button and version label`
 
-## Task 7: Hand-off for the human (print this, do not do it)
+---
+
+## Task 6: Push notifications ("New level!", "Poop mode is here 💩")
+
+### What works and the limits (read once)
+- iPadOS/iOS **16.4+** supports Web Push **only for apps added to the Home Screen**, and only after the user **taps a button** that requests permission. Safari tabs never get it.
+- The message travels: Mac → Apple's push service (`*.push.apple.com`) → iPad. Both the Mac and the iPad need internet, not just home Wi-Fi.
+- **Unproven for this setup:** the game's origin is a home IP/`.local` name with a private CA. Apple's push service is expected to accept it (subscriptions are not tied to public DNS), but this has not been tested. **Step 6.0 is a gate:** if it fails, stop Task 6, revert its changes, and report. Tasks 5, 7–9 still ship.
+- Tapping a notification opens the app; Task 5 then updates it automatically on the menu. So the deploy flow becomes "deploy → push → kid taps → newest version".
+
+### Dependency exception
+Rule 3 is relaxed for exactly one package: `npm i -D --save-exact web-push@3.6.7`. It is used only by `scripts/push.mjs` on the Mac, never by the game bundle. Run `npm run build` and confirm `web-push` does not appear in `dist/` (`grep -r "web-push" dist` → no output).
+
+### Launchd exception
+Rule 9 is relaxed for exactly one command, restarting (not reconfiguring) the existing service so it loads the new server code: `launchctl kickstart -k gui/$(id -u)/com.cagdasatici.subwayrunner`.
+
+### Server (`scripts/serve-https.mjs`, still no dependencies)
+- [ ] **6.1** Storage folder `PUSH_DIR = resolve(root, '..', 'push')` (that is `$SITE/push`, outside `www`, never served). On start:
+  - create it (mode 0700);
+  - if `vapid.json` is missing, generate a P-256 key pair with `crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' })`. Export the private key as JWK and store `{ publicKey, privateKey }`:
+    - `publicKey`: base64url of `0x04 || x || y` (65 bytes);
+    - `privateKey`: the JWK `d` (base64url, 32 bytes).
+    
+    Mode 0600. Never log the private key.
+- [ ] **6.2** Routes:
+  - `GET /api/push/key` → `{ "publicKey": "<base64url>" }`.
+  - `POST /api/push/subscribe` with body `{ "who": "arel" | "nora" | "other", "subscription": { "endpoint": "...", "keys": { "p256dh": "...", "auth": "..." } } }`. Max body 4 kB; else 413.
+    - Validate that `endpoint` is `https:` and its host ends with one of `push.apple.com`, `fcm.googleapis.com`, `push.services.mozilla.com`, `notify.windows.com`; else 400.
+    - Upsert by `endpoint` into `subscriptions.json` (array of `{ who, subscription, addedAt }`). Write to `subscriptions.json.tmp` then `rename`.
+    - Respond 204.
+  - `POST /api/push/unsubscribe` with body `{ "endpoint": "..." }` → remove it, 204.
+  - Everything under `/api/` gets `Cache-Control: no-store`. Allow `POST` only on these two paths (keep 405 elsewhere).
+- [ ] **6.3** Log one line per subscribe/unsubscribe with `who` and the endpoint host only (never the full endpoint or keys).
+
+### Sender (`scripts/push.mjs`, Mac only)
+- [ ] **6.4** CLI: `node scripts/push.mjs --body "Poop mode is here 💩" [--title Runner] [--to all|arel|nora|other] [--url ./]`.
+  - Reads `$SITE/push/vapid.json` and `subscriptions.json` (`SITE` same default/override as `deploy-local.sh`).
+  - `webpush.setVapidDetails('mailto:cagdasatici@users.noreply.github.com', publicKey, privateKey)`.
+  - Sends `JSON.stringify({ title, body, url })` with `{ TTL: 86400, urgency: 'normal' }` to each matching subscription.
+  - Removes subscriptions that answer 404 or 410, and saves the file.
+  - Prints `sent N, removed M, failed K` plus one line per failure with the status code. Exit code 1 if all sends failed.
+- [ ] **6.5** `package.json` script `"notify": "node scripts/push.mjs"`. `deploy-local.sh`: at the end, `if [ -n "${NOTIFY:-}" ]; then node scripts/push.mjs --body "$NOTIFY"; fi`, so `NOTIFY="New: poop mode 💩" npm run deploy` deploys and announces in one go.
+
+### Service worker (in `vite.config.ts`'s generated source)
+- [ ] **6.6** Add:
+  ```js
+  self.addEventListener('push', (e) => {
+    let d = {}; try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data && e.data.text() }; }
+    e.waitUntil(Promise.all([
+      self.registration.showNotification(d.title || 'Runner', { body: d.body || 'Something new is waiting!', icon: './icons/icon-192.png', badge: './icons/icon-192.png', tag: 'runner-news', data: { url: d.url || './' } }),
+      self.navigator.setAppBadge ? self.navigator.setAppBadge(1).catch(() => {}) : Promise.resolve(),
+    ]));
+  });
+  self.addEventListener('notificationclick', (e) => {
+    e.notification.close();
+    const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+    e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      const c = cs.find((w) => w.url.startsWith(self.registration.scope));
+      return c ? c.focus().then(() => c.navigate(url)) : self.clients.openWindow(url);
+    }));
+  });
+  ```
+  Every push **must** show a notification (iOS revokes the subscription after silent pushes).
+
+### Client (`src/ui/push.ts`)
+- [ ] **6.7** Pure helpers:
+  - `urlBase64ToUint8Array(s: string): Uint8Array`;
+  - `pushSupported(env = { window, navigator })` → true only if `serviceWorker`, `PushManager` and `Notification` all exist **and** the app runs standalone (`matchMedia('(display-mode: standalone)').matches || navigator.standalone === true`).
+- [ ] **6.8** Menu button `🔔 News: OFF` / `🔔 News: ON` in `.modes`, styled like `#board-toggle`. Shown only when `pushSupported()`.
+  - Tapping it while OFF opens a small chunky sheet: **"Whose iPad is this?"** with buttons **Arel**, **Nora**, **Someone else**.
+  - In that button's click handler, **first and synchronously**, call `Notification.requestPermission()`. iOS only allows it inside the gesture, so nothing may be `await`ed before it.
+  - Then:
+    1. fetch `api/push/key`;
+    2. `reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`;
+    3. POST `api/push/subscribe` with `{ who, subscription: sub.toJSON() }`;
+    4. save `localStorage['push-who'] = who` and toast `News is ON 🔔`.
+  - If permission is `denied`: toast `Notifications are off. Turn them on in Settings › Notifications › Runner`.
+  - Tapping while ON: `sub.unsubscribe()`, POST `api/push/unsubscribe`, toast `News is OFF`.
+- [ ] **6.9** At every launch, when permission is `granted`, re-POST the current subscription (subscriptions can rotate; the server upserts). Clear the app badge at launch.
+- [ ] **6.10** Tests `tests/push.test.ts`:
+  1. `urlBase64ToUint8Array` round-trips a known 65-byte key (first byte 4);
+  2. `pushSupported` false in a non-standalone env, true with all features and standalone;
+  3. `pushSupported` false when `PushManager` is missing.
+
+### Gate and verification
+- [ ] **6.0 GATE (do this right after 6.1–6.8, before the tests in 6.10):**
+  1. `npm run deploy`, then `launchctl kickstart -k gui/$(id -u)/com.cagdasatici.subwayrunner`.
+  2. `curl -s --cacert "$(mkcert -CAROOT)/rootCA.pem" https://localhost:8843/api/push/key` → a JSON with a ~87-char `publicKey`.
+  3. **Stop and ask the human** to:
+     - open the Home Screen app on **one** iPad (iPadOS 16.4+; check Settings › General › About);
+     - tap 🔔, pick a name, accept.
+  4. Then `cat "$HOME/Library/Application Support/SubwayRunner/push/subscriptions.json" | node -e 'const a=JSON.parse(require("fs").readFileSync(0));console.log(a.length, a.map(s=>new URL(s.subscription.endpoint).host))'` → Expected: `1 [ 'web.push.apple.com' ]`.
+  5. `npm run notify -- --body "Test from Dad 🚀"` → Expected: `sent 1, removed 0, failed 0`, and the notification appears on the iPad within a minute with the app closed.
+  6. **If any step fails** (subscribe throws in the app, no subscription arrives, or Apple returns 403/400), record the exact error and **stop Task 6**:
+     - `git checkout -- .`, then `git clean -fd` limited to the new Task 6 files;
+     - `npm uninstall web-push`;
+     - restart the service once more;
+     - report. Continue with Task 7.
+- [ ] **6.11 Run** `npx tsc --noEmit && npm test` → Expected: N0 + 20 passed. `grep -r "web-push" dist` → no output.
+- [ ] **6.12** `git status --short` must not list anything under `push/`, and no key material anywhere: `git grep -n "privateKey" -- ':!*.md'` only matches code that reads the field, never a key value.
+- [ ] **6.13** Commit: `feat: push notifications for the Home Screen app (subscribe per kid, send from the Mac)`
+
+---
+
+## Task 7: Full verification and deploy
+
+- [ ] **7.1** `npx tsc --noEmit && npm test && npm run build` → Expected: N0 + 20 passed (N0 + 17 if the Task 6 gate failed); build OK; gzipped JS grows by less than 20 kB.
+- [ ] **7.2** Existing checks still pass: `node scripts/check-touch.mjs`, `check-journey.mjs`, `check-boost.mjs`, `check-offline.mjs` (title `Runner`), and the new `check-update.mjs`.
+- [ ] **7.3** Grep for leaks: `git diff main --stat` shows no file under `web/public/faces`; `git ls-files | grep -i -E 'faces/|photo-'` → only source files (`src/gfx/face.ts`, `src/ui/photoWave.ts`, tests), no images.
+- [ ] **7.4** `npm run deploy` (runs tests, builds, copies to the home server, writes `faces/index.json`). Expected: the listing includes `faces/index.json` next to the photos.
+- [ ] **7.5** Commit any check-script additions: `test(web): headless checks for messes and the photo wave`
+
+## Task 8: GitHub
+
+- [ ] **8.1** Rename the repo: `gh repo rename runner --repo cagdasatici/subway-runner --yes`. Expected: `✓ Renamed repository cagdasatici/runner`. GitHub keeps redirecting the old URL.
+- [ ] **8.2** `git remote set-url origin https://github.com/cagdasatici/runner.git && git remote -v`.
+- [ ] **8.3** `git push -u origin feat/runner-photos-messes`, then `gh pr create --base main --title "Runner: rename, kid photo wave, dog messes" --body-file <(printf '...')` with a short body listing the five changes and the "kept on purpose" table from Task 1.
+- [ ] **8.4** Report the PR URL. **Do not merge**: the human merges, then runs `scripts/redeploy.sh`.
+
+## Task 9: Hand-off for the human (print this, do not do it)
 
 Renaming the folder from inside the session would pull the working directory out from under the agent, so the agent prints these steps instead:
 
@@ -403,3 +568,5 @@ Expected: the home server keeps working unchanged (its paths do not depend on th
 3. Same as **Toby**. As any other character: no messes.
 4. Finish a level as **Arel**: his photos wave across the screen, then a big "Go Arel!" photo; same for **Nora** with hers. Crashing shows nothing. Other characters: nothing.
 5. No photo is in the GitHub repo.
+6. Deploy a new build while the iPad app is open on the menu. Switch to another app and back: within a few seconds it shows "Getting the new version…" and reloads, with stars and character kept. The version label under the menu changes. Mid-run it waits until the menu.
+7. (If the Task 6 gate passed) On each kid's iPad: tap 🔔, pick the name, accept. Then run `NOTIFY="Poop mode is here 💩" npm run deploy` on the Mac. The notification arrives with the app closed; tapping it opens the game on the new version.
