@@ -157,6 +157,7 @@ const game = new Game($('gl'), {
     el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
     audio.sfx(kind === 'poop' ? 'splat' : 'splash');
     later(180, () => audio.sfx('laugh'));
+    later(1700, () => audio.sfx('laugh'));
   },
   onMessClear: () => {
     const el = $('toast');
@@ -170,7 +171,8 @@ const game = new Game($('gl'), {
     el.style.left = `${rect.left}px`; el.style.top = `${rect.top}px`;
     el.style.width = el.style.height = `${rect.size}px`;
     const label = el.firstElementChild as HTMLElement;
-    label.textContent = lastMess === 'pee' ? 'OOPS!' : 'EWWW!';
+    const words = lastMess === 'pee' ? ['OOPS!', 'WHOOPS!', 'OH NOOO!'] : ['EWWW!', 'STINKY!', 'HAHAHA!'];
+    if (el.classList.contains('hidden')) label.textContent = words[Math.floor(Math.random() * words.length)];
     el.classList.remove('hidden');
   },
   onToast: (text) => {
