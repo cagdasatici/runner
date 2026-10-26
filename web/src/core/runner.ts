@@ -1,7 +1,7 @@
 // One-to-one port of GameCore/Sources/GameCore/Runner.swift. Keep the step order identical:
-// TODO: port messes to GameCore (Swift) when the iOS app gets them.
 // move → sideways → vertical → slide timer → forward → tick → collisions → coins.
 import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, rowZ, type MessKind, type ObstacleKind, type PickupKind } from './track';
+// TODO: port messes to GameCore (Swift) when the iOS app gets them.
 import { MESS_TICKS, placeMesses, stepsOn } from './messes';
 
 export type Move = 'none' | 'left' | 'right' | 'up' | 'down';

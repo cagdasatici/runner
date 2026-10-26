@@ -3,7 +3,7 @@
 // Started at login by launchd (see Task W8). Files are read from disk on every request, so a new
 // deploy is live immediately without a restart.
 import { createServer } from 'node:https';
-import { readFileSync, createReadStream, statSync, mkdirSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import { readFileSync, createReadStream, statSync, mkdirSync, writeFileSync, renameSync, chmodSync } from 'node:fs';
 import { generateKeyPairSync } from 'node:crypto';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
@@ -34,15 +34,23 @@ const PUSH_HOSTS = ['push.apple.com', 'fcm.googleapis.com', 'push.services.mozil
 const WHO = ['arel', 'nora', 'other'];
 const MAX_BODY = 4096;
 mkdirSync(PUSH_DIR, { recursive: true, mode: 0o700 });
-if (!existsSync(VAPID_FILE)) {
+chmodSync(PUSH_DIR, 0o700);
+function loadVapid() {
+  try {
+    const v = JSON.parse(readFileSync(VAPID_FILE, 'utf8'));
+    if (typeof v?.publicKey === 'string' && typeof v?.privateKey === 'string') return v;
+  } catch { /* missing or corrupt: regenerate below */ }
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const pub = publicKey.export({ format: 'jwk' });
   const priv = privateKey.export({ format: 'jwk' });
   const raw = Buffer.concat([Buffer.from([4]), Buffer.from(pub.x, 'base64url'), Buffer.from(pub.y, 'base64url')]); // 0x04 || x || y
-  writeFileSync(VAPID_FILE, JSON.stringify({ publicKey: raw.toString('base64url'), privateKey: priv.d }), { mode: 0o600 });
+  const v = { publicKey: raw.toString('base64url'), privateKey: priv.d };
+  writeFileSync(`${VAPID_FILE}.tmp`, JSON.stringify(v), { mode: 0o600 });
+  renameSync(`${VAPID_FILE}.tmp`, VAPID_FILE);
   console.log('Generated push keys (public key only is ever logged).');
+  return v;
 }
-const vapidPublic = JSON.parse(readFileSync(VAPID_FILE, 'utf8')).publicKey;
+const vapidPublic = loadVapid().publicKey;
 
 function readSubs() {
   try { const a = JSON.parse(readFileSync(SUBS_FILE, 'utf8')); return Array.isArray(a) ? a : []; } catch { return []; }
@@ -95,7 +103,8 @@ async function handleApi(req, res, pathname, done) {
     const entry = { who: json.who, subscription: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }, addedAt: new Date().toISOString() };
     const list = readSubs();
     const i = list.findIndex((s) => s.subscription?.endpoint === sub.endpoint);
-    if (i >= 0) list[i] = { ...entry, addedAt: list[i].addedAt ?? entry.addedAt }; else list.push(entry);
+    if (i >= 0) list[i] = { ...entry, who: json.who === 'other' && ['arel', 'nora'].includes(list[i].who) ? list[i].who : entry.who, addedAt: list[i].addedAt ?? entry.addedAt }; // no downgrade from arel/nora to other
+    else list.push(entry);
     writeSubs(list);
     console.log(`push subscribe ${json.who} ${host}`);
     return send(204);

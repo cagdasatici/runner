@@ -429,7 +429,7 @@ tapped('update', async () => {
 const paintPush = (on: boolean) => { const b = $('push-toggle'); b.textContent = `🔔 News: ${on ? 'ON' : 'OFF'}`; b.setAttribute('aria-pressed', String(on)); };
 if (pushSupported()) {
   $('push-toggle').classList.remove('hidden');
-  void pushIsOn().then(paintPush);
+  void pushIsOn().then(paintPush).catch(() => {});
   void resubscribe();
 }
 tapped('push-toggle', async () => {

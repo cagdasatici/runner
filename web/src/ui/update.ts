@@ -21,11 +21,24 @@ export interface ApplyDeps {
   location: Pick<Location, 'replace'>;
 }
 
+let applying = false; // re-entry guard: the watcher, the button and show() can all ask at once
+
+/** Test hook: a successful apply leaves the guard on (the page is reloading). */
+export const resetApplyGuard = (): void => { applying = false; };
+
 export async function applyUpdate(remote: string, deps: ApplyDeps = { caches, sw: navigator.serviceWorker, location }): Promise<void> {
-  globalThis.document?.getElementById('updating')?.classList.remove('hidden');
-  try { await (await deps.sw?.getRegistration())?.update(); } catch { /* offline or no worker: carry on */ }
-  for (const k of await deps.caches.keys()) await deps.caches.delete(k);
-  deps.location.replace('./?v=' + remote);
+  if (applying) return;
+  applying = true;
+  const overlay = globalThis.document?.getElementById('updating');
+  overlay?.classList.remove('hidden');
+  try {
+    try { await (await deps.sw?.getRegistration())?.update(); } catch { /* offline or no worker: carry on */ }
+    for (const k of await deps.caches.keys()) await deps.caches.delete(k);
+    deps.location.replace('./?v=' + remote);
+  } catch {
+    overlay?.classList.add('hidden'); // failed: let the kids keep playing, a later check retries
+    applying = false;
+  }
 }
 
 export function startUpdateWatcher(opts: { canApply: () => boolean; onAvailable: (label: string, remote: string) => void }): { check: () => Promise<void> } {
