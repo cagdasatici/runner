@@ -10,6 +10,7 @@ import { Game, type PowerHud } from './game';
 import { CHARACTERS, characterById, saveCharacter, stepCharacter } from './gfx/characters';
 import type { Move } from './core/runner';
 import { tierFor } from './ui/tiers';
+import { loadPhotos, playPhotoWave } from './ui/photoWave';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -31,7 +32,10 @@ let current = 0; // journey level being played (0 = endless run)
 let screen: 'menu' | 'map' | 'hud' | 'over' | 'results' = 'menu';
 const timers: number[] = [];
 const later = (ms: number, fn: () => void) => timers.push(window.setTimeout(fn, ms));
-const cancelTimers = () => { while (timers.length) window.clearTimeout(timers.pop()); };
+let cancelWave: (() => void) | null = null;
+let kidPhotos: Promise<string[]> | null = null;
+// every screen change or new run goes through cancelTimers, so it also stops a running photo wave
+const cancelTimers = () => { while (timers.length) window.clearTimeout(timers.pop()); cancelWave?.(); cancelWave = null; };
 
 function newSeed(): bigint {
   if (fixedSeed && /^\d+$/.test(fixedSeed) && fixedSeed !== '0') return BigInt(fixedSeed);
@@ -131,7 +135,17 @@ const game = new Game($('gl'), {
   },
   onFinish: (run) => showResults(run),
   // Optional hook owned by audio.ts; guarded so this compiles whether or not it exists yet.
-  onFinishLine: () => { audio.playFinishFanfare(); },
+  onFinishLine: () => {
+    audio.playFinishFanfare();
+    const d = characterById(game.character);
+    const photos = kidPhotos;
+    if (photos) photos.then((urls) => {
+      if (urls.length && (screen === 'hud' || screen === 'results') && current) {
+        cancelWave?.();
+        cancelWave = playPhotoWave(urls, d.name, { onPop: (i) => { if (i % 3 === 0) audio.sfx('star'); }, onFinale: () => confetti(40, 1) });
+      }
+    });
+  },
   onPower: (p) => { renderPowers(p); audioPower(p); },
   onMess: (kind) => {
     lastMess = kind;
@@ -252,6 +266,7 @@ function resetHud(level: boolean): void {
 function playEndless(): void {
   cancelTimers();
   current = 0;
+  kidPhotos = null;
   resetHud(false);
   game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
@@ -263,6 +278,8 @@ function playLevel(n: number): void {
   current = n;
   resetHud(true);
   $('level-chip').textContent = levelName(n);
+  const d = characterById(game.character);
+  kidPhotos = d.photoSet ? loadPhotos(d.photoSet, d.face?.photo?.url) : null;
   game.startLevel(n, autoplay, idle, autoplay ? skip : 0, runOptions());
   show('hud');
   audio.playMusic({ mode: 'run', world: levelSpec(n).world });

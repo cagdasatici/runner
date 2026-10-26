@@ -11,6 +11,8 @@ mkdir -p "$SITE/www"
 rsync -a --delete dist/ "$SITE/www/"
 # private face pictures (Arel, Nora) live outside git in $SITE/faces; the build never contains them
 [ -d "$SITE/faces" ] && cp -R "$SITE/faces" "$SITE/www/faces"
+# list the private photos for the finish photo wave (the file never enters git or the build)
+[ -d "$SITE/www/faces" ] && (cd "$SITE/www/faces" && ls -1 | grep -Ei '\.(png|jpe?g|webp)$' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(s.split("\n").filter(Boolean))))' > index.json)
 mkdir -p "$SITE/www/support" && cp ../docs/site/*.html "$SITE/www/support/"   # privacy + support pages
 cp scripts/serve-https.mjs "$SITE/serve-https.mjs"
 echo "Deployed to $SITE/www:"

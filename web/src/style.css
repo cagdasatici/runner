@@ -272,3 +272,19 @@ body.lightning::after { content: ''; position: fixed; inset: 0; pointer-events: 
 #reaction { position: fixed; border: 6px solid #fff; border-radius: 28px; box-shadow: 0 0 0 4px var(--ink), 0 10px 30px rgba(0,0,0,.35); pointer-events: none; z-index: 20; animation: reactPop .35s cubic-bezier(.2,1.6,.4,1); }
 #reaction span { position: absolute; left: 50%; bottom: -22px; transform: translateX(-50%) rotate(-4deg); background: #84cc16; color: #fff; font-weight: 900; font-size: 26px; padding: 2px 14px; border-radius: 14px; -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; white-space: nowrap; }
 @keyframes reactPop { from { transform: scale(.2) rotate(-12deg); opacity: 0 } to { transform: scale(1) rotate(0); opacity: 1 } }
+
+/* finish photo wave (Arel, Nora) */
+#photo-wave { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+.pw-bubble { position: absolute; top: 0; left: 0; border-radius: 50%; border: 5px solid #fff; box-sizing: border-box; overflow: hidden;
+  box-shadow: 0 0 0 3px var(--ink), 0 8px 16px rgba(0, 0, 0, 0.35); will-change: transform; background: #fff; }
+.pw-bubble img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pw-grid { position: absolute; inset: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 16px; padding: 12vmin; }
+.pw-bubble.static { position: relative; width: clamp(72px, 16vmin, 150px); height: clamp(72px, 16vmin, 150px); }
+.pw-finale { position: absolute; left: 50%; top: 50%; width: 38vmin; margin: -24vmin 0 0 -19vmin; display: flex; flex-direction: column; align-items: center; transform: scale(0); }
+.pw-face { position: relative; width: 38vmin; height: 38vmin; border-radius: 50%; border: 5px solid #fff; box-sizing: border-box; overflow: hidden; box-shadow: 0 0 0 3px var(--ink); background: #fff; }
+.pw-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pw-finale::before { content: ''; position: absolute; left: -10px; top: -10px; width: calc(38vmin + 20px); height: calc(38vmin + 20px); border-radius: 50%;
+  background: conic-gradient(#fde047, #f59e0b, #fde047, #f59e0b, #fde047); -webkit-mask: radial-gradient(circle, transparent calc(50% - 10px), #000 calc(50% - 9px)); mask: radial-gradient(circle, transparent calc(50% - 10px), #000 calc(50% - 9px));
+  animation: spin 2s linear infinite; }
+.pw-face { z-index: 1; }
+.pw-name { margin-top: 14px; font-size: clamp(40px, 9vmin, 84px); font-weight: 900; color: #fff; -webkit-text-stroke: 7px var(--ink); paint-order: stroke fill; filter: drop-shadow(0 5px 0 #ea580c); white-space: nowrap; }

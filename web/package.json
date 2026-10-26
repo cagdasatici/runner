@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "deploy": "scripts/deploy-local.sh"
+    "deploy": "scripts/deploy-local.sh",
+    "faces:index": "node -e \"const fs=require('fs');const d='public/faces';if(fs.existsSync(d))fs.writeFileSync(d+'/index.json',JSON.stringify(fs.readdirSync(d).filter(n=>/\\.(png|jpe?g|webp)$/i.test(n))))\""
   },
   "dependencies": {
     "three": "0.186.1"
