@@ -174,7 +174,7 @@ $('board-toggle').addEventListener('click', () => {
   try { localStorage.setItem(BOARD_KEY, startBoard ? '1' : '0'); } catch { /* ignore */ }
   paintBoardToggle();
 });
-const runOptions = () => ({ board: startBoard, friendly: true });
+const runOptions = () => ({ board: startBoard, friendly: true, messes: !!characterById(game.character).messes });
 
 function show(s: typeof screen): void {
   screen = s;

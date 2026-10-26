@@ -1,6 +1,7 @@
 // One-to-one port of GameCore/Sources/GameCore/Runner.swift. Keep the step order identical:
 // move → sideways → vertical → slide timer → forward → tick → collisions → coins.
-import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, type ObstacleKind, type PickupKind } from './track';
+import { COIN_Y, coinY, laneX, obstacleLength, ROOF_TOLERANCE, ROOF_Y, SUPPORT_HALF, RAMP_LENGTH, Track, type MessKind, type ObstacleKind, type PickupKind } from './track';
+import { MESS_TICKS, placeMesses, stepsOn } from './messes';
 
 export type Move = 'none' | 'left' | 'right' | 'up' | 'down';
 
@@ -37,9 +38,12 @@ export interface RunnerState {
   boardBreaks: number;
   stumbles: number;
   pickups: number;
+  messTicks: number; // ticks of mess left (dogs only)
+  messKind: MessKind | null;
+  messes: number; // counter, for the renderer
 }
 
-export interface StartOptions { board?: boolean; friendly?: boolean }
+export interface StartOptions { board?: boolean; friendly?: boolean; messes?: boolean }
 
 export const Runner = {
   dt: 1.0 / 120.0,
@@ -107,6 +111,7 @@ export function startState(opts: StartOptions = {}): RunnerState {
     tick: 0, z: 0, lane: 1, x: 0, y: 0, floor: 0, vy: 0, slideTicks: 0, coins: 0, collected: new Set(), crashed: false,
     points: 0, bonus: 0, board: opts.board ? Power.boardTicks : 0, magnet: 0, sneakers: 0, double: 0, fly: 0, descend: 0, flyFrom: 0, flyUp: 0, iframes: 0,
     slow: 0, chaser: 0, friendly: opts.friendly ?? false, streak: 0, lastCoinTick: -1000, nearMisses: 0, combos: 0, boardBreaks: 0, stumbles: 0, pickups: 0,
+    messTicks: 0, messKind: null, messes: 0,
   };
 }
 export function cloneState(s: RunnerState): RunnerState {
@@ -196,6 +201,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
   if (s.iframes > 0) s.iframes -= 1;
   if (s.slow > 0) s.slow -= 1;
   if (s.chaser > 0) s.chaser -= 1;
+  if (s.messTicks > 0) { s.messTicks -= 1; if (s.messTicks === 0) s.messKind = null; }
   switch (move) {
     case 'left':
       s.lane = Math.max(0, s.lane - 1);
@@ -286,6 +292,15 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
       if (s.friendly && clear >= 0 && clear < Power.nearMissMargin) { s.nearMisses += 1; s.bonus += Power.nearMissPoints; }
     }
   }
+  const airborne = s.fly > 0 || s.descend > 0;
+  for (const m of track.messes) {
+    if (s.collected.has(m.id) || !stepsOn(prev.z, s.z, s.x, s.y, s.floor, airborne, m)) continue;
+    own();
+    s.collected.add(m.id);
+    s.messKind = m.kind;
+    s.messTicks = MESS_TICKS;
+    s.messes += 1;
+  }
   const mult = s.double > 0 ? Power.doubleFactor : 1;
   for (const c of track.coins) {
     if (s.collected.has(c.id)) continue;
@@ -321,16 +336,29 @@ export class RunSession {
   static readonly generateAhead = 120.0;
   state: RunnerState = startState();
   track: Track;
+  private seed: number;
+  private messes: boolean;
+  private messHorizon = 0;
 
   constructor(seed: bigint, opts: StartOptions = {}) {
     this.state = startState(opts);
+    this.seed = Number(seed & 0xffffffffn);
+    this.messes = !!opts.messes;
     this.track = new Track(seed);
     this.track.generate(RunSession.generateAhead);
+    this.placeMesses();
+  }
+
+  private placeMesses(): void {
+    if (!this.messes) return;
+    placeMesses(this.track, this.seed, this.messHorizon, this.state.z + RunSession.generateAhead);
+    this.messHorizon = this.state.z + RunSession.generateAhead;
   }
 
   tick(move: Move, boost = false): void {
     this.state = step(this.state, move, this.track, ENDLESS_PACE, boost);
     this.track.generate(this.state.z + RunSession.generateAhead);
+    this.placeMesses();
     this.track.dropBehind(this.state.z);
   }
 }

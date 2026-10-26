@@ -1,5 +1,6 @@
 // Journey levels: 12 worlds × 10 levels. Each level is a finite, seeded track with a finish line,
 // 3 golden stars and a difficulty that grows with the level number. Pure logic, no DOM.
+import { placeMesses } from './messes';
 import { SplitMix64 } from './rng';
 import { canReach, cloneState, Power, Runner, startState, step, type Move, type Pace, type RunnerState, type StartOptions } from './runner';
 import { COIN_SPACING, COIN_Y, COINS_PER_ROW, FIRST_ROW_Z, OBSTACLE_KINDS, obstacleLength, RAMP_LENGTH, ROOF_Y, Track, type Coin, type Obstacle, type ObstacleKind, type Pickup, type PickupKind } from './track';
@@ -308,6 +309,7 @@ export class LevelRun {
   constructor(n: number, opts: StartOptions = {}) {
     this.level = buildLevel(n);
     this.state = startState(opts);
+    if (opts.messes) placeMesses(this.level.track, 7919 * n, 0, this.level.finishZ - 15);
   }
 
   get over(): boolean { return this.finished || this.state.crashed; }
