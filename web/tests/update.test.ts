@@ -22,6 +22,8 @@ describe('updates', () => {
     expect(isNewer('a', 'b')).toBe(true);
     expect(isNewer('a', 'a')).toBe(false);
     expect(isNewer('a', null)).toBe(false);
+    expect(isNewer('mp', 'mo')).toBe(false); // never downgrade
+    expect(isNewer('mo', 'mp')).toBe(true);
   });
   it('applyUpdate clears caches, reloads once, keeps localStorage', async () => {
     const f = fakes();

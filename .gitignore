@@ -11,3 +11,4 @@ App/Info.plist
 # private face pictures: never commit (copied to the server by scripts/deploy-local.sh from $SITE/faces)
 web/public/faces/
 web/screenshots/photo-*
+updates-out/

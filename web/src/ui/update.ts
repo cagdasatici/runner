@@ -1,10 +1,29 @@
 // In-app updates: the Home Screen app is cache-first, so ask the network for version.json and, when the
 // build id differs, drop all caches and reload. Never touches localStorage (stars, best, character survive).
+import { applyDelta, fetchRemoteManifest, UPDATES_URL, type Manifest } from './delta';
+
 export interface Remote { version: string; label: string }
 
-export const isNewer = (local: string, remote: string | null | undefined): boolean => !!remote && remote !== local;
+// Versions are base-36 build timestamps: only ever move forward (an old public build must not downgrade a newer install).
+export const isNewer = (local: string, remote: string | null | undefined): boolean => {
+  if (!remote || remote === local) return false;
+  const a = parseInt(local, 36), b = parseInt(remote, 36);
+  return Number.isNaN(a) || Number.isNaN(b) ? true : b > a;
+};
+
+let cdnManifest: Manifest | null = null; // set when the newest version was only reachable on the public update site
 
 export async function fetchRemote(): Promise<Remote | null> {
+  cdnManifest = null;
+  const home = await fetchHome();
+  if (home) return home;
+  const m = await fetchRemoteManifest(); // away from home Wi-Fi
+  if (!m) return null;
+  cdnManifest = m;
+  return { version: m.version, label: m.label };
+}
+
+async function fetchHome(): Promise<Remote | null> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 4000);
   try {
@@ -32,6 +51,11 @@ export async function applyUpdate(remote: string, deps: ApplyDeps = { caches, sw
   const overlay = globalThis.document?.getElementById('updating');
   overlay?.classList.remove('hidden');
   try {
+    if (cdnManifest && cdnManifest.version === remote) {
+      await applyDelta(cdnManifest, { caches, fetch: (u, i) => fetch(u, i), base: UPDATES_URL, scope: new URL('./', location.href).href });
+      deps.location.replace('./?v=' + remote);
+      return;
+    }
     try { await (await deps.sw?.getRegistration())?.update(); } catch { /* offline or no worker: carry on */ }
     for (const k of await deps.caches.keys()) await deps.caches.delete(k);
     deps.location.replace('./?v=' + remote);

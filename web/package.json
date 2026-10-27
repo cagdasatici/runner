@@ -10,6 +10,7 @@
     "test": "vitest run",
     "deploy": "scripts/deploy-local.sh",
     "notify": "node scripts/push.mjs",
+    "publish:updates": "node scripts/publish-updates.mjs --deploy",
     "faces:index": "node -e \"const fs=require('fs');const d='public/faces';if(fs.existsSync(d))fs.writeFileSync(d+'/index.json',JSON.stringify(fs.readdirSync(d).filter(n=>/\\.(png|jpe?g|webp)$/i.test(n))))\""
   },
   "dependencies": {
