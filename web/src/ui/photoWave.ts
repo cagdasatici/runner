@@ -1,5 +1,5 @@
 // Finish photo wave for Arel and Nora: bubbles fly across the screen, then one big "Go <name>!" photo.
-export const WAVE = { count: 12, stagger: 0.15, travel: 2.6, total: 5.0, finaleAt: 3.4, rows: [0.34, 0.62], amp: 0.07, lambda: 0.55 } as const;
+export const WAVE = { count: 12, stagger: 0.22, travel: 5.4, total: 9.0, finaleAt: 6.6, rows: [0.34, 0.62], amp: 0.07, lambda: 0.55 } as const;
 
 /** File names in faces/ that belong to a kid (prefix match, image extensions only), sorted for a stable order. */
 export function pickPhotos(names: string[], prefix: string): string[] {
@@ -19,7 +19,7 @@ export function wavePos(i: number, t: number, vw: number, vh: number, size: numb
   const y = WAVE.rows[row] * vh + WAVE.amp * vh * Math.sin((2 * Math.PI * x) / (WAVE.lambda * vw) + (row ? Math.PI : 0));
   const k = Math.min(1, local / 0.3);
   const scale = k < 0.7 ? (k / 0.7) * 1.15 : 1.15 - ((k - 0.7) / 0.3) * 0.15;
-  return { x, y, rot: 10 * Math.sin(4 * t + i), scale };
+  return { x, y, rot: 8 * Math.sin(1.8 * t + i), scale };
 }
 
 const cache = new Map<string, Promise<string[]>>();
