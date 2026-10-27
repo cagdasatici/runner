@@ -1,7 +1,8 @@
 // The journey map: 12 worlds stacked bottom (world 1) to top (world 12), 10 level buttons each on a winding path.
 import { LEVELS_PER_WORLD, WORLDS } from '../core/level';
 import type { ProgressStore } from '../core/progress';
-import { worldDecor, WORLD_INFO } from './worlds';
+import { WORLD_INFO } from './worlds';
+import { worldScene } from './mapArt';
 
 export const SECTION_H = 1060;
 export const STAR_SVG = '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.2 6.8.8-5 4.7 1.3 6.7L12 17.6l-6 3.3 1.3-6.7-5-4.7 6.8-.8z"/></svg>';
@@ -18,10 +19,8 @@ export function buildMap(scroller: HTMLElement, onPick: (n: number) => void): vo
   for (let w = WORLDS - 1; w >= 0; w--) {
     const info = WORLD_INFO[w];
     const pts = [...Array(LEVELS_PER_WORLD).keys()].map((i) => nodePos(w, i));
-    const d = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x * 8.2} ${y}`).join(' ');
     html += `<section class="world" data-world="${w + 1}" style="height:${SECTION_H}px;--a:${info.a};--b:${info.b};--c:${info.c}">
-      ${worldDecor(w, SECTION_H)}
-      <svg class="path" viewBox="0 0 820 ${SECTION_H}" preserveAspectRatio="none"><path d="${d}"/></svg>
+      <svg class="decor" viewBox="0 0 820 ${SECTION_H}" preserveAspectRatio="none">${worldScene(w, SECTION_H, pts.map(([x, y]) => [x * 8.2, y] as [number, number]))}</svg>
       ${pts.map(([x, y], i) => `<button class="node${i === 9 ? ' boss' : ''}" data-level="${w * 10 + i + 1}" style="left:${x}%;top:${y}px"></button>`).join('')}
       <div class="banner"><small>WORLD ${w + 1}</small><b>${info.name}</b><span class="wstars"></span></div>
     </section>`;

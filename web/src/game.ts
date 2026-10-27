@@ -13,6 +13,7 @@ import { RunnerFigure } from './gfx/character';
 import { characterById, loadCharacter } from './gfx/characters';
 import { CoinRenderer } from './gfx/coins';
 import { MessRenderer } from './gfx/messes';
+import { Ambient } from './gfx/ambient';
 import { PowerVisuals } from './gfx/powerups';
 import { MagnetEffect } from './gfx/magnet';
 import { ParticlePool } from './gfx/effects';
@@ -30,7 +31,7 @@ const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 2048, LOW_SHADOW = 512;
 const VIEW_AHEAD = 115;
 const CELEBRATE_SECONDS = 2.8; // fireworks + celebration after the finish line, then the results card
 const COAST_SECONDS = 1.0;      // the runner jogs on past the line, then stops to celebrate
-const REACTION_SECONDS = 2.0; // the dog's face close-up after a mess
+const REACTION_SECONDS = 3.2; // the dog's face close-up after a mess
 const FIREWORK_COLORS = [0xf472b6, 0x60a5fa, 0xfde047, 0x4ade80, 0xfb923c, 0xc084fc];
 
 export interface GameEvents {
@@ -136,6 +137,7 @@ export class Game {
   private reactionT = 0;
   private stinkT = 0;
   private messes = new MessRenderer();
+  private ambient = new Ambient();
   private reactionCam = new THREE.PerspectiveCamera(32, 1, 0.05, 20);
   private headPos = new THREE.Vector3();
   private stars = new GoldenStarRenderer();
@@ -194,7 +196,7 @@ export class Game {
     this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
     this.figure.preloadAll();
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.ambient.additive.points, this.ambient.normal.points, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -206,6 +208,7 @@ export class Game {
     this.camera.updateProjectionMatrix();
     const px = h * this.renderer.getPixelRatio();
     this.dust.setScale(px);
+    this.ambient.setScale(px);
     this.glow.setScale(px);
     this.sparkles.setScale(px);
     this.confetti.setScale(px);
@@ -216,6 +219,7 @@ export class Game {
     this.theme = t;
     this.env.apply(t);
     this.post.setTheme(t);
+    this.ambient.set(t);
   }
 
   /** Swipes and keys queue moves; one is applied per tick (like the iOS NSLock queue). */
@@ -345,6 +349,7 @@ export class Game {
       this.report(dt);
     }
     this.dust.update(dt);
+    this.ambient.update(dt, this.camera.position);
     this.glow.update(dt);
     this.sparkles.update(dt);
     this.confetti.update(dt);
@@ -374,7 +379,8 @@ export class Game {
     const r = this.renderer, w = window.innerWidth, h = window.innerHeight;
     const size = Math.round(Math.min(w, h) * 0.34), left = Math.round((w - size) / 2), top = Math.round(h * 0.13);
     this.figure.headWorld(this.headPos);
-    this.reactionCam.position.set(this.headPos.x + 0.35, this.headPos.y + 0.12, this.headPos.z - 1.15); // in front: the dog runs toward -z
+    const zoom = 1 + 0.12 * Math.sin(this.time * 14), sway = 0.25 * Math.sin(this.time * 9); // the camera bobs in and out like it is laughing too
+    this.reactionCam.position.set(this.headPos.x + 0.35 + sway, this.headPos.y + 0.12 + 0.06 * Math.sin(this.time * 18), this.headPos.z - 1.15 * zoom); // in front: the dog runs toward -z
     this.reactionCam.lookAt(this.headPos);
     this.reactionCam.aspect = 1; this.reactionCam.updateProjectionMatrix();
     const autoClear = r.autoClear;
@@ -659,6 +665,7 @@ export class Game {
   setQuality(q: Quality): void {
     this.quality = q;
     this.post.enabled = q === 'high';
+    this.ambient.density = q === 'high' ? 1 : 0.4;
     this.env.setShadowSize(q === 'high' ? HIGH_SHADOW : LOW_SHADOW);
     this.pixelRatio = Math.min(this.pixelRatio, q === 'high' ? HIGH_DPR : LOW_DPR);
     this.renderer.setPixelRatio(this.pixelRatio);

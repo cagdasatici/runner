@@ -4,7 +4,7 @@ import {
   barSeconds, beatSeconds, coinMidi, layerRamp, levelFor, nextBpm, Sequencer, smoothSpeed, targetBpm,
   BOOST_SPEED_BONUS, type BarDecision, type Layer, type NoteEvent,
 } from './music';
-import { WORLD_THEMES, type Theme } from './themes';
+import { WORLD_THEMES, type Kit, type LeadKind, type Theme } from './themes';
 import { degreeToMidi, makeRng, midiToFreq } from './theory';
 
 export const LOOKAHEAD = 0.14;        // seconds scheduled ahead of currentTime
@@ -54,6 +54,7 @@ export class MusicEngine {
   private jet: { gain: GainNode; stop: () => void } | null = null;
   private duckUntil = 0;
   private sfxRng = makeRng(99);
+  private ksCache = new Map<number, AudioBuffer>();
   stats = { peakVoices: 0, scheduled: 0 };
 
   constructor(ctx: BaseAudioContext) {
@@ -217,7 +218,8 @@ export class MusicEngine {
   }
 
   // ---------------- music instruments ----------------
-  private kick(t: number, vel: number, bus: Bus): void {
+  private kick(t: number, vel: number, bus: Bus, kit: Kit = 'electro'): void {
+    if (kit === 'soft') { this.blip({ t, f: 110, f2: 52, type: 'sine', dur: 0.26, peak: 0.42 * vel, bus, prio: 3 }); this.noiseHit({ t, dur: 0.02, type: 'lowpass', f: 900, peak: 0.1 * vel, bus, prio: 3 }); return; }
     if (!this.claim(3)) return;
     const ctx = this.ctx;
     const osc = ctx.createOscillator(), g = ctx.createGain(), sh = ctx.createWaveShaper();
@@ -229,7 +231,10 @@ export class MusicEngine {
     this.route(g, bus, 0.04);
     this.noiseHit({ t, dur: 0.012, type: 'bandpass', f: 2200, q: 0.8, peak: 0.07 * vel, bus, prio: 3 });
   }
-  private snare(t: number, vel: number, bus: Bus): void {
+  private snare(t: number, vel: number, bus: Bus, kit: Kit = 'electro'): void {
+    if (kit === 'soft') { this.blip({ t, f: 800, f2: 700, type: 'triangle', dur: 0.04, peak: 0.12 * vel, bus, prio: 2 }); this.noiseHit({ t, dur: 0.14, type: 'bandpass', f: 3000, q: 0.7, peak: 0.1 * vel, bus, wet: 0.25, prio: 2 }); return; }
+    if (kit === 'tribal') { this.blip({ t, f: 190, f2: 120, type: 'sine', dur: 0.22, peak: 0.3 * vel, bus, wet: 0.2, prio: 2 }); this.noiseHit({ t, dur: 0.05, type: 'bandpass', f: 1200, q: 1, peak: 0.1 * vel, bus, prio: 2 }); return; }
+    if (kit === 'chip') { this.noiseHit({ t, dur: 0.11, type: 'highpass', f: 2500, peak: 0.12 * vel, bus, prio: 2 }); this.blip({ t, f: 330, f2: 200, type: 'square', dur: 0.06, peak: 0.06 * vel, bus, prio: 2 }); return; }
     // body (two detuned drum-head tones) + crack (bandpassed noise) + sizzle (highpassed noise tail)
     this.blip({ t, f: 240, f2: 170, type: 'triangle', dur: 0.09, peak: 0.15 * vel, detune: 30, bus, prio: 2 });
     this.noiseHit({ t, dur: 0.12, type: 'bandpass', f: 2100, f2: 1300, q: 0.9, peak: 0.19 * vel, bus, wet: 0.35, prio: 2 });
@@ -239,8 +244,88 @@ export class MusicEngine {
     this.noiseHit({ t, dur: 1.6, type: 'highpass', f: 6000, f2: 4200, q: 0.4, peak: 0.07 * vel, bus, wet: 0.5, prio: 1, pan: -0.15 });
     this.noiseHit({ t, dur: 0.6, type: 'bandpass', f: 3400, q: 0.6, peak: 0.04 * vel, bus, wet: 0.4, prio: 1, pan: 0.2 });
   }
+  /** Karplus-Strong plucked string: a noise burst circulating in a damped delay loop. Cached per pitch. */
+  private stringBuf(midi: number, bright: number): AudioBuffer {
+    const key = midi * 4 + Math.round(bright * 3), hit = this.ksCache.get(key);
+    if (hit) return hit;
+    const sr = this.ctx.sampleRate, n = Math.max(2, Math.round(sr / midiToFreq(midi))), len = Math.round(sr * 1.6);
+    const buf = this.ctx.createBuffer(1, len, sr), d = buf.getChannelData(0), r = makeRng(midi * 31 + 7);
+    for (let i = 0; i < n; i++) d[i] = r.next() * 2 - 1;
+    const damp = 0.9965 + 0.0025 * bright;
+    for (let i = n; i < len; i++) d[i] = damp * 0.5 * (d[i - n] + d[i - n + 1]);
+    this.ksCache.set(key, buf);
+    return buf;
+  }
+
+  /** One note on a sampled-style instrument (FM bells, wood, strings, breath, brass). `dur` is the written length in seconds. */
+  private note(kind: LeadKind, t: number, midi: number, dur: number, vel: number, bus: Bus, pan = 0): void {
+    if (kind === 'synth') return;
+    if (!this.claim(2)) return;
+    const ctx = this.ctx, f = midiToFreq(midi);
+    const env = (peak: number, att: number, decay: number, hold = 0) => {
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + att);
+      if (hold) g.gain.setValueAtTime(peak, t + att + hold);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + att + hold + decay);
+      return g;
+    };
+    const osc = (type: OscillatorType, hz: number, to: AudioNode, stop: number, cents = 0) => {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz; o.detune.value = cents;
+      o.connect(to); o.start(t); o.stop(stop); this.track(o); return o;
+    };
+    const fm = (ratio: number, index: number, decay: number, peak: number, partial = 0) => {
+      const g = env(peak * vel, 0.003, decay), m = ctx.createOscillator(), mg = ctx.createGain(), c = ctx.createOscillator();
+      mg.gain.setValueAtTime(f * index, t); mg.gain.exponentialRampToValueAtTime(Math.max(1, f * 0.05), t + decay * 0.6);
+      m.frequency.value = f * ratio; c.type = 'sine'; c.frequency.value = f;
+      m.connect(mg); mg.connect(c.frequency); c.connect(g);
+      m.start(t); c.start(t); m.stop(t + decay + 0.1); c.stop(t + decay + 0.1); this.track(c);
+      if (partial) osc('sine', f * 4.02, env(peak * vel * partial, 0.002, decay * 0.25), t + decay * 0.3 + 0.05);
+      this.route(g, bus, 0.45, 0.25, pan);
+    };
+    switch (kind) {
+      case 'bell': fm(3.5, 2.2, 1.5, 0.11, 0.18); break;
+      case 'musicbox': fm(5.04, 1.4, 0.7, 0.1, 0.22); break;
+      case 'toypiano': fm(7.1, 2.8, 0.38, 0.1, 0.3); break;
+      case 'marimba': {
+        const g = env(0.2 * vel, 0.002, 0.34); osc('sine', f, g, t + 0.45); osc('sine', f * 4, env(0.09 * vel, 0.001, 0.07), t + 0.12);
+        this.noiseHit({ t, dur: 0.02, type: 'bandpass', f: Math.min(5000, f * 5), q: 1.5, peak: 0.04 * vel, bus, prio: 1 });
+        this.route(g, bus, 0.25, 0.15, pan); break;
+      }
+      case 'steel': {
+        const g = env(0.17 * vel, 0.004, 0.6);
+        osc('sine', f, g, t + 0.7); osc('sine', f * 2.005, g, t + 0.7); osc('triangle', f * 3.01, env(0.05 * vel, 0.004, 0.25), t + 0.4);
+        const trem = ctx.createOscillator(), tg = ctx.createGain(); trem.frequency.value = 6.5; tg.gain.value = 0.04 * vel; trem.connect(tg); tg.connect(g.gain); trem.start(t); trem.stop(t + 0.7);
+        this.route(g, bus, 0.3, 0.3, pan); break;
+      }
+      case 'pluck': case 'harp': {
+        const src = ctx.createBufferSource(); src.buffer = this.stringBuf(midi, kind === 'harp' ? 1 : 0.2);
+        const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = kind === 'harp' ? 7000 : 3600;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.5 * vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(0.35, Math.min(1.2, dur * 1.6 + 0.3)));
+        src.connect(lp); lp.connect(g); src.start(t); src.stop(t + 1.3); this.track(src);
+        this.route(g, bus, 0.35, 0.3, pan); break;
+      }
+      case 'flute': {
+        const end = t + Math.max(0.18, dur), g = ctx.createGain();
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.13 * vel, t + 0.07); g.gain.setTargetAtTime(0.1 * vel, t + 0.1, 0.1);
+        g.gain.setValueAtTime(0.1 * vel, end); g.gain.linearRampToValueAtTime(0, end + 0.1);
+        const vib = ctx.createOscillator(), vg = ctx.createGain(); vib.frequency.value = 5.2; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(10, t + 0.4); vib.connect(vg); vib.start(t); vib.stop(end + 0.2);
+        for (const [hz, amp] of [[f, 1], [f * 2, 0.16], [f * 3, 0.05]] as const) { const a = ctx.createGain(); a.gain.value = amp; const o = osc('sine', hz, a, end + 0.2); vg.connect(o.detune); a.connect(g); }
+        this.noiseHit({ t, dur: Math.max(0.2, dur), type: 'bandpass', f: Math.min(6000, f * 3), q: 2, peak: 0.03 * vel, att: 0.04, bus, prio: 1, pan });
+        this.route(g, bus, 0.4, 0.2, pan); break;
+      }
+      case 'brass': {
+        const end = t + Math.max(0.15, dur), g = ctx.createGain(), lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.Q.value = 1.2; lp.frequency.setValueAtTime(500, t); lp.frequency.linearRampToValueAtTime(2800, t + 0.07); lp.frequency.setTargetAtTime(1500, t + 0.1, 0.2);
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.09 * vel, t + 0.025); g.gain.setValueAtTime(0.08 * vel, end); g.gain.linearRampToValueAtTime(0, end + 0.1);
+        lp.connect(g); osc('sawtooth', f, lp, end + 0.2, -6); osc('sawtooth', f, lp, end + 0.2, 6); osc('square', f / 2, lp, end + 0.2);
+        this.route(g, bus, 0.3, 0.15, pan); break;
+      }
+    }
+  }
+
   /** Lead: two detuned oscillators + square an octave down, filter that opens per note, delayed vibrato. */
   private lead(t: number, vel: number, midi: number, dur: number, th: Theme, bus: Bus): void {
+    if (th.voice.lead !== 'synth') { this.note(th.voice.lead, t, midi, dur, vel, bus, 0.05); return; }
     if (!this.claim(2)) return;
     const ctx = this.ctx, f = midiToFreq(midi), end = t + Math.max(0.1, dur);
     const g = ctx.createGain(), lp = ctx.createBiquadFilter();
@@ -308,6 +393,7 @@ export class MusicEngine {
   }
   private pad(t: number, vel: number, notes: number[], th: Theme, secs: number, bus: Bus): void {
     if (!this.claim(3)) return;
+    if (th.voice.pad === 'choir' || th.voice.pad === 'glass') { this.voicePad(t, vel, notes, th.voice.pad, secs, bus); return; }
     const ctx = this.ctx, end = t + secs;
     const g = ctx.createGain(), lp = ctx.createBiquadFilter();
     // filter envelope swells through the bar; a slow LFO keeps the sustain moving
@@ -334,6 +420,24 @@ export class MusicEngine {
     this.route(g, bus, 0.55);
   }
 
+  /** Choir (saws through vowel formants) and glass (sine + inharmonic shimmer) pads. */
+  private voicePad(t: number, vel: number, notes: number[], kind: 'choir' | 'glass', secs: number, bus: Bus): void {
+    if (!this.claim(3)) return;
+    const ctx = this.ctx, end = t + secs, g = ctx.createGain(), per = 0.06 * vel / Math.sqrt(notes.length);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(per * 3, t + 0.6); g.gain.setValueAtTime(per * 3, end - 0.05); g.gain.linearRampToValueAtTime(0, end + 0.6);
+    const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 5; lg.gain.value = 6; lfo.connect(lg); lfo.start(t); lfo.stop(end + 0.7);
+    let last: OscillatorNode | null = null;
+    if (kind === 'choir') {
+      const sum = ctx.createGain();
+      for (const [fq, q, a] of [[650, 6, 1], [1080, 8, 0.5], [2650, 10, 0.25]] as const) { const b = ctx.createBiquadFilter(); b.type = 'bandpass'; b.frequency.value = fq; b.Q.value = q; const bg = ctx.createGain(); bg.gain.value = a * 3; sum.connect(b); b.connect(bg); bg.connect(g); }
+      notes.forEach((m) => { for (const c of [-9, 9]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = midiToFreq(m); o.detune.value = c; lg.connect(o.detune); o.connect(sum); o.start(t); o.stop(end + 0.7); last = o; } });
+    } else {
+      notes.forEach((m, i) => { const f = midiToFreq(m); for (const [r, a] of [[1, 1], [2, 0.35], [3.01, 0.15], [5.4, 0.06]] as const) { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * r; o.detune.value = (i % 2) * 5; lg.connect(o.detune); const og = ctx.createGain(); og.gain.value = a; o.connect(og); og.connect(g); o.start(t); o.stop(end + 0.7); last = o; } });
+    }
+    if (last) this.track(last);
+    this.route(g, bus, 0.7, 0.15);
+  }
+
   private playEvent(e: NoteEvent, time: number, sd: number, sess: Session): void {
     const th = this.theme!;
     const bus = (DRUMS.has(e.inst) ? sess.layers : sess.tonal)[e.layer];
@@ -342,7 +446,7 @@ export class MusicEngine {
     const dur = e.dur * sd;
     switch (e.inst) {
       case 'kick': {
-        this.kick(time, e.vel, bus);
+        this.kick(time, e.vel, bus, th.voice.kit);
         const p = sess.pump.gain; // sidechain-style pump on the tonal layers
         p.cancelScheduledValues(time);
         p.setValueAtTime(1, time);
@@ -352,8 +456,8 @@ export class MusicEngine {
       }
       case 'crash': this.cymbal(time, e.vel, bus); break;
       case 'lead': this.lead(time, e.vel, e.midi!, dur, th, bus); break;
-      case 'snare': this.snare(time, e.vel, bus); break;
-      case 'clap': this.clap(time, e.vel, bus); break;
+      case 'snare': this.snare(time, e.vel, bus, th.voice.kit); break;
+      case 'clap': if (th.voice.kit === 'tribal') this.tom(time, e.vel * 0.7, 55 + th.rootPc, bus); else this.clap(time, e.vel, bus); break;
       case 'hat': this.hat(time, e.vel, bus, false); break;
       case 'ohat': this.hat(time, e.vel, bus, true); break;
       case 'shaker': this.shaker(time, e.vel, bus); break;
@@ -361,9 +465,11 @@ export class MusicEngine {
       case 'bass': this.bass(time, e.vel, e.midi!, dur, th, bus); break;
       case 'pad': this.pad(time, e.vel, e.notes!, th, dur, bus); break;
       case 'pluck':
+        if (th.voice.arp !== 'synth') { e.notes!.forEach((m, i) => this.note(th.voice.arp, time + i * 0.012, m, dur * 0.5, e.vel * 0.8, bus, (i - 1) * 0.3)); break; }
         e.notes!.forEach((m, i) => this.blip({ t: time + i * 0.006, f: midiToFreq(m), type: 'triangle', dur: 0.22, peak: 0.05 * e.vel, lp: 2800, lp2: 600, detune: 5, bus, wet: 0.3, echo: 0.3, pan: (i - 1) * 0.3, prio: 1 }));
         break;
       case 'arp':
+        if (th.voice.arp !== 'synth') { this.note(th.voice.arp, time, e.midi!, dur, e.vel * 0.9, bus, ((e.midi! % 5) - 2) * 0.12); break; }
         this.blip({ t: time, f: midiToFreq(e.midi!), type: th.lead, dur: Math.max(0.09, dur * 0.9), peak: 0.075 * e.vel, lp: 3600, lp2: 900, q: 1.5, detune: 6, bus, wet: 0.2, echo: 0.35, pan: ((e.midi! % 5) - 2) * 0.12, prio: 1 });
         break;
       case 'counter':
@@ -628,13 +734,23 @@ export class MusicEngine {
         this.noiseHit({ t, dur: 0.22, type: 'bandpass', f: 1800, peak: 0.14, bus: b, prio: 3 });
         this.noiseHit({ t: t + 0.06, dur: 0.15, type: 'bandpass', f: 2600, peak: 0.14, bus: b, prio: 3 });
         break;
-      case 'laugh':
-        for (let i = 0; i < 5; i++) {
-          const ti = t + i * 0.18, f = 300 - i * 18;
-          this.blip({ t: ti, f, f2: f * 0.8, type: 'triangle', dur: 0.11, att: 0.01, peak: 0.13 - i * 0.012, lp: 1100, detune: 12, bus: b, wet: 0.2, prio: 3 });
-          this.noiseHit({ t: ti, dur: 0.08, type: 'bandpass', f: 1200, peak: 0.05, bus: b, prio: 3 });
+      case 'laugh': {
+        // a proper belly laugh: an inhale wheeze, a run of "ha"s that climb then tumble, a honking snort and a happy squeal
+        const v = this.sfxRng.int(2);
+        this.noiseHit({ t, dur: 0.14, type: 'bandpass', f: 900, peak: 0.07, bus: b, prio: 3 });
+        const n = 7 + v * 2;
+        for (let i = 0; i < n; i++) {
+          const ti = t + 0.16 + i * (0.15 - i * 0.004), f = (330 + 70 * Math.sin(i * 0.9 + v)) * (1 + i * 0.015);
+          this.blip({ t: ti, f, f2: f * 0.7, type: 'sawtooth', dur: 0.1, att: 0.008, peak: 0.09, lp: 1300, detune: 14, bus: b, wet: 0.22, pan: i % 2 ? 0.25 : -0.25, prio: 3 });
+          this.blip({ t: ti, f: f * 2.01, f2: f * 1.4, type: 'triangle', dur: 0.08, peak: 0.05, bus: b, prio: 3 });
+          this.noiseHit({ t: ti, dur: 0.07, type: 'bandpass', f: 1500, peak: 0.05, bus: b, prio: 3 });
         }
+        const te = t + 0.16 + n * 0.13;
+        this.blip({ t: te, f: 140, f2: 90, type: 'square', dur: 0.14, peak: 0.07, lp: 600, bus: b, prio: 3 });
+        this.noiseHit({ t: te, dur: 0.12, type: 'bandpass', f: 500, peak: 0.1, bus: b, prio: 3 });
+        this.blip({ t: te + 0.18, f: 520, f2: 980, type: 'sine', dur: 0.32, att: 0.02, peak: 0.09, bus: b, wet: 0.3, prio: 3 });
         break;
+      }
       case 'bubbles':
         for (let i = 0; i < 9; i++) this.blip({ t: t + i * 0.07 + this.sfxRng.next() * 0.03, f: 600 + this.sfxRng.next() * 900, type: 'sine', dur: 0.06, peak: 0.08, bus: b, prio: 3 });
         break;
