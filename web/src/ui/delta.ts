@@ -4,7 +4,7 @@
 export interface Manifest { version: string; label: string; files: Record<string, string> }
 
 /** Public update site (static, no photos or personal data). Override at build time with VITE_UPDATES_URL. */
-export const UPDATES_URL: string = import.meta.env.VITE_UPDATES_URL ?? 'https://updates.cagdasatici.com/';
+export const UPDATES_URL: string = import.meta.env.VITE_UPDATES_URL ?? 'https://runner-updates.cagdasatici.com/';
 
 export const changedFiles = (local: Record<string, string>, remote: Record<string, string>): string[] =>
   Object.keys(remote).filter((p) => local[p] !== remote[p]);
