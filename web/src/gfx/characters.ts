@@ -38,7 +38,7 @@ export interface CharacterDef {
   beardless?: boolean;
   /** Bella and Toby: poop and pee appear on the track. */
   messes?: boolean;
-  /** Arel and Nora: file-name prefix of their photos in faces/ for the finish photo wave. */
+  /** Kids and dogs: file-name prefix of their photos in faces/ for the finish photo wave. */
   photoSet?: string;
 }
 
@@ -69,7 +69,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
   }),
   animal('fox', 'Rusty', 1.4),
   {
-    id: 'maltese', name: 'Bella', model: '', procedural: 'maltese', height: 1.1, slide: 'tuck', yaw: 0, runSpeed: 1.2, messes: true,
+    id: 'maltese', name: 'Bella', model: '', procedural: 'maltese', height: 1.1, slide: 'tuck', yaw: 0, runSpeed: 1.2, messes: true, photoSet: 'bella',
     // clip names are only labels here: the procedural rig animates every key itself
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
@@ -90,7 +90,7 @@ export const CHARACTERS: readonly CharacterDef[] = [
     extras: ['dress'],
   }),
   {
-    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1, messes: true,
+    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1, messes: true, photoSet: 'toby',
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
 ];

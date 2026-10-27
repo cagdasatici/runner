@@ -26,9 +26,30 @@ void main() {
 
 const COMPOSITE = `
 uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform vec2 texel;
+uniform vec2 sunUv; uniform float rays; uniform float mblur; uniform float ca; uniform float grain; uniform float time;
 varying vec2 vUv;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + time) * 43758.5453); }
 void main() {
-  vec3 c = texture2D(scene, vUv).rgb + texture2D(bloom, vUv).rgb * strength;
+  vec2 toC = vUv - vec2(0.5, 0.46);
+  vec3 base = texture2D(scene, vUv).rgb;
+  if (mblur > 0.002 || ca > 0.0005) { // speed: radial blur and colour fringing grow towards the screen edges
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 6; i++) {
+      float k = float(i) / 5.0;
+      vec2 o = toC * (mblur * k);
+      acc.r += texture2D(scene, vUv - o * (1.0 + ca * 14.0)).r;
+      acc.g += texture2D(scene, vUv - o).g;
+      acc.b += texture2D(scene, vUv - o * (1.0 - ca * 14.0)).b;
+    }
+    base = acc / 6.0;
+  }
+  vec3 c = base + texture2D(bloom, vUv).rgb * strength;
+  if (rays > 0.001) { // god rays: smear the bright parts of the picture away from the sun
+    vec2 step = (sunUv - vUv) * (1.0 / 14.0);
+    vec2 p = vUv; float w = 1.0; vec3 g = vec3(0.0);
+    for (int i = 0; i < 14; i++) { p += step; g += texture2D(bloom, p).rgb * w; w *= 0.9; }
+    c += g * rays * 0.11;
+  }
   c *= tint;
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = mix(vec3(l), c, sat);
@@ -45,6 +66,7 @@ void main() {
     c = clamp(c, 0.0, 1.0);
     float vig = smoothstep(1.15, 0.35, length(vUv - 0.5) * 1.4); c *= mix(0.82, 1.0, vig);
   }
+  c += (hash(vUv * 1.0 + 0.5) - 0.5) * grain;
   gl_FragColor = vec4(max(c, 0.0), 1.0);
   #include <colorspace_fragment>
 }`;
@@ -70,6 +92,7 @@ export class PostFx {
     this.comp = mk(COMPOSITE, {
       scene: { value: null }, bloom: { value: null }, strength: { value: 0.3 }, tint: { value: new THREE.Vector3(1, 1, 1) },
       sat: { value: 1 }, contrast: { value: 1 }, hd: { value: 1 }, texel: { value: new THREE.Vector2() },
+      sunUv: { value: new THREE.Vector2(0.5, 0.62) }, rays: { value: 0 }, mblur: { value: 0 }, ca: { value: 0 }, grain: { value: 0.025 }, time: { value: 0 },
     });
     this.quad = new THREE.Mesh(tri, this.bright);
     this.quad.frustumCulled = false;
@@ -95,6 +118,13 @@ export class PostFx {
     u.sat.value = t.grade.saturation;
     u.contrast.value = t.grade.contrast;
     this.bright.uniforms.threshold.value = t.bloom.threshold;
+  }
+
+  /** Per frame: where the sun sits on screen, how strong the god rays are, and how hard speed smears the picture. */
+  setDynamics(sunX: number, sunY: number, rays: number, mblur: number, ca: number, time: number): void {
+    const u = this.comp.uniforms;
+    (u.sunUv.value as THREE.Vector2).set(sunX, sunY);
+    u.rays.value = rays; u.mblur.value = mblur; u.ca.value = ca; u.time.value = time % 100;
   }
 
   private pass(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null): void {

@@ -87,7 +87,9 @@ describe('messes', () => {
     for (const c of CHARACTERS) expect(!!c.messes).toBe(c.id === 'maltese' || c.id === 'toby');
     expect(characterById('arel').photoSet).toBe('arel');
     expect(characterById('nora').photoSet).toBe('nora');
-    for (const c of CHARACTERS) if (c.id !== 'arel' && c.id !== 'nora') expect(c.photoSet).toBeUndefined();
+    expect(characterById('maltese').photoSet).toBe('bella');
+    expect(characterById('toby').photoSet).toBe('toby');
+    for (const c of CHARACTERS) if (!['arel', 'nora', 'maltese', 'toby'].includes(c.id)) expect(c.photoSet).toBeUndefined();
     expect(laneX(1)).toBe(0);
   });
 });

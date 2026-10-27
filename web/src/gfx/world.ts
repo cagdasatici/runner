@@ -117,7 +117,7 @@ export function makeSegment(k: number, m: EnvMaterials, t: Theme): THREE.Group {
   mg.add(BOX, m.gravel, 0, -0.15, -len / 2, { scale: [8.6, 0.3, len], uvScale: [4, 8], color: 0xffffff });
   for (let lane = 0; lane < 3; lane++) {
     const x = laneX(lane);
-    for (let z = 0.6; z < len; z += 1.2) box(c, m.vc, x, 0.05, -z, 2.3, 0.1, 0.3, 0x7b5230, { ao: 0.35, top: 0.1 });
+    for (let z = 0.6; z < len; z += 1.2) box(c, m.vc, x + (rng.int(10) - 5) / 100, 0.05, -z + (rng.int(10) - 5) / 100, 2.3 + rng.int(8) / 100, 0.1, 0.3, mix(0x7b5230, [0x5a3b20, 0x8a6038, 0x6a4526, 0x4e3420][rng.int(4)], 0.45), { ao: 0.35, top: 0.1 });
     for (const side of [-0.72, 0.72]) {
       box(c, m.vc, x + side, 0.12, -len / 2, 0.2, 0.06, len, 0x4a4f5a);
       box(c, m.vc, x + side, 0.2, -len / 2, 0.1, 0.1, len, 0xd4dbe4, { top: 0.3 });
@@ -143,6 +143,14 @@ export function makeSegment(k: number, m: EnvMaterials, t: Theme): THREE.Group {
         }
       } else {
         building(c, side, zc, 6 + rng.int(9), t);
+      }
+      if (rng.int(3) === 0) { // hydrant, bin or bollards on the pavement
+        const pz = zc + (rng.int(60) - 30) / 10, px = side * (4.7 + rng.int(8) / 10);
+        switch (rng.int(3)) {
+          case 0: c.mg.add(CYL, m.vc, px, 0.62, pz, { scale: [0.18, 0.55, 0.18], color: 0xdc2626, ao: 0.3, top: 0.2 }); c.mg.add(ICO, m.vc, px, 0.95, pz, { scale: [0.2, 0.16, 0.2], color: 0xdc2626 }); box(c, m.vc, px, 0.78, pz, 0.46, 0.1, 0.1, 0xdc2626); break;
+          case 1: c.mg.add(CYL, m.vc, px, 0.95, pz, { scale: [0.3, 0.7, 0.3], color: 0x3f7d4e, ao: 0.4, top: 0.15 }); box(c, m.vc, px, 1.34, pz, 0.7, 0.08, 0.7, 0x2f5d3b); break;
+          default: for (let i = 0; i < 3; i++) c.mg.add(CYL, m.vc, px, 0.9, pz + (i - 1) * 0.9, { scale: [0.09, 0.6, 0.09], color: 0xfacc15, ao: 0.3, top: 0.2 });
+        }
       }
       placeShrub(c, side * (6.0 + rng.int(8) / 10), zc + (rng.int(60) - 30) / 10, rng);
       if (rng.int(2) === 0) placeShrub(c, side * (6.3 + rng.int(8) / 10), zc + (rng.int(60) - 30) / 10, rng);
@@ -193,6 +201,20 @@ function building(c: Ctx, side: number, zc: number, h: number, t: Theme): void {
   const nA = 4;
   for (let i = 0; i < nA; i++) {
     box(c, m.vc, fx - side * 0.5, 2.55, zc - (d - 1.2) / 2 + (i + 0.5) * (d - 1.2) / nA, 1.2, 0.18, (d - 1.2) / nA, i % 2 ? 0xffffff : neon, { top: 0.1 });
+  }
+  // floor ledges, drainpipe and (on some buildings) a fire escape: real relief on the otherwise flat facade
+  const ledge = mix(wall, 0xffffff, 0.35), iron = 0x2a303b;
+  for (let f = 1; f * 3 < h1; f++) box(c, m.vc, fx - side * 0.12, f * 3 - 0.04, zc, 0.34, 0.16, d - 0.2, ledge, { ao: 0.3, top: 0.12 });
+  c.mg.add(CYL, m.vc, fx - side * 0.1, h1 / 2, zc + d / 2 - 0.5, { scale: [0.07, h1, 0.07], color: 0x59606c, ao: 0.3 });
+  if (rng.int(3) === 0 && h1 > 6) {
+    const zf = zc + (rng.int(5) - 2) * 0.55, floors = Math.min(4, Math.floor(h1 / 3) - 1);
+    for (let f = 1; f <= floors; f++) {
+      const y = f * 3 + 0.1;
+      box(c, m.vc, fx - side * 0.7, y, zf, 1.3, 0.08, 1.7, iron, { top: 0.15 });
+      box(c, m.vc, fx - side * 1.3, y + 0.5, zf, 0.05, 0.9, 1.7, iron);
+      box(c, m.vc, fx - side * 0.7, y + 0.95, zf - 0.82, 1.3, 0.05, 0.05, iron); box(c, m.vc, fx - side * 0.7, y + 0.95, zf + 0.82, 1.3, 0.05, 0.05, iron);
+      if (f < floors) c.mg.add(BOX, m.vc, fx - side * 0.7, y + 1.55, zf + (f % 2 ? 0.2 : -0.2), { scale: [0.5, 0.06, 2.1], rot: [f % 2 ? 0.7 : -0.7, 0, 0], color: iron });
+    }
   }
   // corner pilasters
   for (const dz of [-1, 1]) box(c, m.vc, fx, h1 / 2, zc + dz * (d / 2 - 0.1), 0.3, h1, 0.3, mix(wall, 0xffffff, 0.3));

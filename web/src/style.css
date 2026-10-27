@@ -96,24 +96,32 @@ svg { width: 1em; height: 1em; fill: currentColor; }
 .mapbar .st { color: #fde047; font-size: 26px; }
 .world { position: relative; overflow: hidden; background: linear-gradient(var(--b), color-mix(in srgb, var(--a) 55%, var(--b))); }
 .world + .world { border-bottom: 6px dashed rgba(255, 255, 255, 0.6); }
+.world .art3d { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 0.6s; pointer-events: none; user-select: none; -webkit-user-drag: none; }
+.world .art3d.ready { opacity: 1; }
 .world .decor, .world .path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .world .path path { fill: none; stroke: rgba(255, 255, 255, 0.85); stroke-width: 20; stroke-linecap: round; stroke-dasharray: 2 30; }
 .node { position: absolute; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; display: grid; place-items: center; padding: 0;
-  font: inherit; font-size: 34px; font-weight: 900; color: #fff; border: 5px solid #fff; pointer-events: auto;
-  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--a) 60%, #fff), var(--a));
-  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.25); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3); }
+  font: inherit; font-size: 34px; font-weight: 900; color: #fff; border: 4px solid rgba(255, 255, 255, 0.96); pointer-events: auto;
+  background:
+    radial-gradient(ellipse 60% 38% at 40% 22%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(circle at 50% 118%, color-mix(in srgb, var(--a) 60%, #000) 0, rgba(0, 0, 0, 0) 62%),
+    linear-gradient(color-mix(in srgb, var(--a) 62%, #fff), var(--a) 52%, color-mix(in srgb, var(--a) 84%, #000));
+  box-shadow: inset 0 -7px 10px rgba(0, 0, 0, 0.26), inset 0 3px 6px rgba(255, 255, 255, 0.6), 0 7px 0 color-mix(in srgb, var(--a) 52%, #000), 0 13px 14px rgba(0, 0, 0, 0.32);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.32), 0 0 10px rgba(0, 0, 0, 0.18); }
 .node.boss { width: 100px; height: 100px; margin: -50px 0 0 -50px; border-color: #fde047; font-size: 40px; }
-.node.locked { background: #cbd5e1; color: #64748b; border-color: #e2e8f0; text-shadow: none; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.15); }
+.node.locked { background: radial-gradient(ellipse 60% 38% at 40% 22%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 70%), linear-gradient(#e2e8f0, #b6c2d3); color: #64748b; border-color: #f1f5f9; text-shadow: none; box-shadow: inset 0 -6px 8px rgba(0, 0, 0, 0.14), 0 6px 0 #8c99ad, 0 11px 12px rgba(0, 0, 0, 0.25); }
 .node.locked svg { width: 32px; height: 32px; }
 .node.now { width: 100px; height: 100px; margin: -50px 0 0 -50px; border-color: #fde047; animation: pulse 1.4s ease-in-out infinite; z-index: 2;
-  box-shadow: 0 0 0 10px rgba(253, 224, 71, 0.45), 0 6px 0 rgba(0, 0, 0, 0.25); }
+  box-shadow: inset 0 -8px 12px rgba(0, 0, 0, 0.26), inset 0 3px 6px rgba(255, 255, 255, 0.6), 0 0 0 10px rgba(253, 224, 71, 0.5), 0 0 34px 10px rgba(253, 224, 71, 0.55), 0 8px 0 color-mix(in srgb, var(--a) 52%, #000), 0 14px 16px rgba(0, 0, 0, 0.32); }
 .node .go { position: absolute; bottom: 92px; padding: 6px 14px; border-radius: 16px; background: #fde047; color: var(--ink);
   font-size: 22px; text-shadow: none; border: 3px solid #fff; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2); }
 .node .ns { position: absolute; bottom: -24px; display: flex; gap: 1px; font-size: 26px; }
 .node .ns i { color: #94a3b8; filter: drop-shadow(0 1px 0 #0006); display: flex; } .node .ns i.got { color: #fde047; }
 .node .ns i:nth-child(2) { transform: translateY(5px); }
 .banner { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
-  padding: 10px 34px 12px; border-radius: 20px; background: var(--c); color: #fff; border: 4px solid #fff; box-shadow: 0 6px 0 rgba(0, 0, 0, 0.25);
+  padding: 10px 34px 12px; border-radius: 22px; color: #fff; border: 4px solid #fff;
+  background: linear-gradient(rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 46%), linear-gradient(color-mix(in srgb, var(--c) 78%, #fff), var(--c) 55%, color-mix(in srgb, var(--c) 80%, #000));
+  box-shadow: inset 0 -5px 8px rgba(0, 0, 0, 0.22), 0 7px 0 color-mix(in srgb, var(--c) 50%, #000), 0 14px 18px rgba(0, 0, 0, 0.32); text-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
   white-space: nowrap; pointer-events: none; }
 .banner small { font-size: 15px; font-weight: 900; opacity: 0.85; letter-spacing: 2px; } .banner b { font-size: 34px; font-weight: 900; }
 .banner .wstars { display: flex; align-items: center; gap: 4px; color: #fde047; font-size: 20px; font-weight: 900; }
@@ -246,7 +254,10 @@ body.boosting #boost-tag { opacity: 1; transform: translateX(-50%) scale(1); }
     repeating-conic-gradient(from 0deg at 50% 46%, rgba(255,255,255,0.55) 0deg 0.6deg, transparent 0.6deg 7deg),
     repeating-conic-gradient(from 3deg at 50% 46%, rgba(255,255,255,0.35) 0deg 0.4deg, transparent 0.4deg 11deg);
   -webkit-mask-image: radial-gradient(ellipse at 50% 46%, transparent 38%, #000 82%); mask-image: radial-gradient(ellipse at 50% 46%, transparent 38%, #000 82%); }
-body.boosting #speedlines { opacity: 1; animation: lines 0.18s linear infinite; }
+body.boosting #speedlines { opacity: calc(1 + var(--hyper, 0) * 0.0); animation: lines 0.18s linear infinite; }
+body.hyper #speedlines { filter: brightness(calc(1 + var(--hyper, 0) * 0.8)) drop-shadow(0 0 calc(var(--hyper, 0) * 6px) #fde68a); animation-duration: 0.09s; }
+body.hyper #boost-tag { background: linear-gradient(#fde047, #ef4444); box-shadow: 0 5px 0 #7f1d1d, 0 0 calc(var(--hyper, 0) * 28px) #fbbf24; }
+body.hyper #boost-tag::after { content: '+'; }
 @keyframes lines { 50% { transform: scale(1.04); } }
 
 /* ---------- character select (menu) ---------- */

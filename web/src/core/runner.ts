@@ -42,6 +42,7 @@ export interface RunnerState {
   messTicks: number; // ticks of mess left (dogs only)
   messKind: MessKind | null;
   messes: number; // counter, for the renderer
+  boostTicks: number; // ticks the boost has been held without a break (drives the extra speed-up, see boostFactor)
 }
 
 export interface StartOptions { board?: boolean; friendly?: boolean; messes?: boolean }
@@ -97,7 +98,19 @@ export const Power = {
  * (tunable). Only the forward speed changes: the tick-based acceleration curve, jump/slide timers and lane
  * switching stay the same, and collisions use the real boosted distance per tick. Ratings ignore boost.
  */
-export const Boost = { factor: 1.6 } as const;
+export const Boost = {
+  factor: 1.6,
+  /** Held this long (3 s) the boost keeps building: the factor eases from `factor` up to `maxFactor` over `rampTicks`, and drops back on release. */
+  rampAfter: 360,
+  rampTicks: 480,
+  maxFactor: 2.3,
+} as const;
+
+/** Forward speed multiplier after the boost has been held for `held` ticks. */
+export function boostFactor(held: number): number {
+  const u = Math.max(0, Math.min(1, (held - Boost.rampAfter) / Boost.rampTicks));
+  return Boost.factor + (Boost.maxFactor - Boost.factor) * u * u * (3 - 2 * u);
+}
 
 /** How fast a run goes: start speed, gain per second, top speed (m/s). Endless mode uses ENDLESS_PACE. */
 export interface Pace {
@@ -112,7 +125,7 @@ export function startState(opts: StartOptions = {}): RunnerState {
     tick: 0, z: 0, lane: 1, x: 0, y: 0, floor: 0, vy: 0, slideTicks: 0, coins: 0, collected: new Set(), crashed: false,
     points: 0, bonus: 0, board: opts.board ? Power.boardTicks : 0, magnet: 0, sneakers: 0, double: 0, fly: 0, descend: 0, flyFrom: 0, flyUp: 0, iframes: 0,
     slow: 0, chaser: 0, friendly: opts.friendly ?? false, streak: 0, lastCoinTick: -1000, nearMisses: 0, combos: 0, boardBreaks: 0, stumbles: 0, pickups: 0,
-    messTicks: 0, messKind: null, messes: 0,
+    messTicks: 0, messKind: null, messes: 0, boostTicks: 0,
   };
 }
 export function cloneState(s: RunnerState): RunnerState {
@@ -244,7 +257,8 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     s.y += s.vy * Runner.dt;
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speed * (boost ? (prev.fly > 0 ? Power.flyBoostSpeed : Boost.factor) : 1) * Runner.dt;
+  s.boostTicks = boost ? prev.boostTicks + 1 : 0;
+  s.z += speed * (boost ? (prev.fly > 0 ? Power.flyBoostSpeed : boostFactor(prev.boostTicks)) : 1) * Runner.dt;
   s.tick += 1;
   // land on, or ride up, whatever is under the feet now
   s.floor = floorAt(s.x, s.z, track);

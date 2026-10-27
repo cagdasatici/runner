@@ -214,8 +214,17 @@ export function facadeTextures(): { map: THREE.Texture; glow: THREE.Texture } {
         c.beginPath(); c.moveTo(x, y + h * 0.55); c.lineTo(x + w * 0.6, y); c.lineTo(x + w, y); c.lineTo(x, y + h * 0.95); c.fill();
         c.fillStyle = hex(0x000000, 0.35); c.fillRect(x + w / 2 - 1, y, 2, h);         // mullion
         c.fillStyle = hex(0xd8d2c8); c.fillRect(x - 5, y + h + 3, w + 10, 5);          // sill
+        if (glow) continue;
+        const st = c.createLinearGradient(0, y + h + 8, 0, y + h + 44);                // rain stain under the sill
+        st.addColorStop(0, hex(0x000000, 0.1 + n() * 0.07)); st.addColorStop(1, hex(0x000000, 0));
+        c.fillStyle = st; c.fillRect(x + 4, y + h + 8, w - 8, 36);
       }
     }
+    if (!glow) for (let i = 0; i < 2600; i++) { // plaster grain: tiny light and dark flecks
+      c.fillStyle = n() > 0.5 ? hex(0x000000, 0.05 + n() * 0.05) : hex(0xffffff, 0.12 + n() * 0.1);
+      c.fillRect(n() * S, n() * S, 1 + n() * 2, 1 + n() * 2);
+    }
+    if (!glow) { const sh = c.createLinearGradient(0, 0, 0, S); sh.addColorStop(0, hex(0x000000, 0)); sh.addColorStop(1, hex(0x000000, 0.06)); c.fillStyle = sh; c.fillRect(0, 0, S, S); }
   });
   return { map: texture(draw(false), true), glow: texture(draw(true), true) };
 }

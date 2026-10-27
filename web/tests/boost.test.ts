@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Boost, Runner, startState, step, speedAtTick, type RunnerState } from '../src/core/runner';
+import { Boost, boostFactor, Runner, startState, step, speedAtTick, type RunnerState } from '../src/core/runner';
 import { Track } from '../src/core/track';
 
 const empty = Track.fixed([]);
@@ -37,5 +37,15 @@ describe('Boost', () => {
     for (; j < 2000 && !t.crashed; j++) t = step(t, 'none', wall);
     expect(s.crashed && t.crashed).toBe(true);
     expect(i).toBeLessThan(j);
+  });
+  it('keeps speeding up after 3 s of continuous hold, and resets on release', () => {
+    expect(boostFactor(Boost.rampAfter)).toBe(Boost.factor);
+    expect(boostFactor(Boost.rampAfter + Boost.rampTicks / 2)).toBeGreaterThan(Boost.factor);
+    expect(boostFactor(10 ** 6)).toBeCloseTo(Boost.maxFactor, 9);
+    const s = run(() => true, startState());
+    const long = (() => { let t = startState(); for (let i = 0; i < 700; i++) t = step(t, 'none', empty, undefined, true); return t; })();
+    expect(long.boostTicks).toBe(700);
+    expect(step(long, 'none', empty, undefined, false).boostTicks).toBe(0);
+    expect(s.boostTicks).toBe(N);
   });
 });

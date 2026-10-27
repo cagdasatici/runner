@@ -105,6 +105,7 @@ function audioPower(p: { board: number; magnet: number; sneakers: number; double
 let lastMess: 'poop' | 'pee' = 'poop';
 const game = new Game($('gl'), {
   onBoost: (on) => { document.body.classList.toggle('boosting', on); audio.setBoost(on); },
+  onHyper: (k) => { document.body.style.setProperty('--hyper', String(k)); document.body.classList.toggle('hyper', k > 0.05); },
   onCoinFly: flyCoin,
   onScore: (score, coins) => { $('score').textContent = String(score); $('coins').textContent = String(coins); },
   onSpeed: (v) => audio.setSpeed(v),

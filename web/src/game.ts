@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { autopilotMove, Solver } from './core/autopilot';
 import { LevelRun } from './core/level';
 import { addCoins, newStreak } from './core/streak';
-import { ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
+import { Boost, boostFactor, ENDLESS_PACE, isGrounded, Power, Runner, RunSession, score, speedOf, type Move, type Pace, type RunnerState, type StartOptions } from './core/runner';
 import { coinY, laneX, obstacleLength, type Coin, type MessKind, type Track } from './core/track';
 import { MESS_ID_BASE, MESS_TICKS } from './core/messes';
 import { RunnerFigure } from './gfx/character';
@@ -42,6 +42,8 @@ export interface GameEvents {
   onStar(taken: number): void;
   onProgress(fraction: number): void;
   onBoost?(on: boolean): void;
+  /** 0…1: how far the long-hold boost has built past its first 3 s (called when it changes by a visible step). */
+  onHyper?(k: number): void;
   onStreak?: (n: number) => void;
   onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
@@ -155,6 +157,8 @@ export class Game {
   private idle = false;
   private pending: Move[] = [];
   private boost = false; // held: SPACE or a still finger
+  private hyper = 0; // 0…1 eased long-hold boost build-up
+  private hyperSent = -1;
   private boostFov = 0; // 0…1 eased FOV widening
   private last: number | null = null;
   private acc = 0;
@@ -356,6 +360,9 @@ export class Game {
     this.env.placeBackdrop(this.camera, this.mode === 'menu');
     this.env.tick(this.time, this.camera);
     this.renderer.info.reset();
+    const orb = this.theme.orb, day = this.theme.stars < 0.5;
+    const boostK = this.boostFov * 0.55 + this.hyper * 0.45;
+    this.post.setDynamics(0.56, 0.6 + (orb ? orb.height * 0.45 : 0.1), orb && this.mode !== 'menu' ? (day ? 0.9 : 0.5) : 0, boostK * 0.1, boostK * 0.0035, this.time);
     this.post.render(this.scene, this.camera);
     if (this.reactionT > 0 && this.mode === 'playing') {
       this.reactionT = Math.max(0, this.reactionT - dt);
@@ -594,7 +601,11 @@ export class Game {
     }
     this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
-    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
+    const hyperTarget = this.boost && s.fly <= 0 ? (boostFactor(s.boostTicks) - Boost.factor) / (Boost.maxFactor - Boost.factor) : 0;
+    this.hyper += (hyperTarget - this.hyper) * Math.min(1, this.frameDt * 6);
+    const hq = Math.round(this.hyper * 20) / 20;
+    if (hq !== this.hyperSent) { this.hyperSent = hq; this.events.onHyper?.(hq); }
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov + 7 * this.hyper; // 66° → 76° as it speeds up, +12° boosted, +7° more when held past 3 s
     this.camera.updateProjectionMatrix();
     const flyingNow = s.fly > 0 || s.descend > 0;
     const camTarget = flyingNow ? s.y * 0.72 : s.floor * 0.7;

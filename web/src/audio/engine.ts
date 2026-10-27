@@ -79,14 +79,21 @@ export class MusicEngine {
     this.musicFilter = ctx.createBiquadFilter();
     this.musicFilter.type = 'lowpass'; this.musicFilter.frequency.value = 5200; this.musicFilter.Q.value = 0.6;
     const trim = ctx.createGain(); trim.gain.value = MUSIC_TRIM; // music sits under the SFX
-    this.musicFilter.connect(this.duck); this.duck.connect(trim); trim.connect(this.master);
+    // a touch of tape: soft saturation rounds peaks and adds low harmonics, so the synths feel less sterile
+    const tape = ctx.createWaveShaper(), tc = new Float32Array(1025);
+    for (let i = 0; i < tc.length; i++) { const x = (i / 512 - 1); tc[i] = Math.tanh(1.35 * x) / 1.35; }
+    tape.curve = tc; tape.oversample = '2x';
+    const warm = ctx.createBiquadFilter(); warm.type = 'lowshelf'; warm.frequency.value = 220; warm.gain.value = 1.8;
+    const air = ctx.createBiquadFilter(); air.type = 'peaking'; air.frequency.value = 2800; air.Q.value = 0.7; air.gain.value = -1.5; // tame the buzzy upper mids
+    this.musicFilter.connect(tape); tape.connect(warm); warm.connect(air); air.connect(this.duck); this.duck.connect(trim); trim.connect(this.master);
 
     // reverb (generated impulse) and tempo-synced echo
     this.revIn = ctx.createGain();
     const conv = ctx.createConvolver();
-    conv.buffer = this.makeImpulse(1.7);
-    const revOut = ctx.createGain(); revOut.gain.value = 0.55;
-    this.revIn.connect(conv); conv.connect(revOut); revOut.connect(this.master);
+    conv.buffer = this.makeImpulse(2.3);
+    const revOut = ctx.createGain(); revOut.gain.value = 0.5;
+    const revLow = ctx.createBiquadFilter(); revLow.type = 'highpass'; revLow.frequency.value = 180; // no mud in the tail
+    this.revIn.connect(conv); conv.connect(revLow); revLow.connect(revOut); revOut.connect(this.master);
     this.echoIn = ctx.createGain();
     this.delay = ctx.createDelay(1.5); this.delay.delayTime.value = 0.35;
     const fb = ctx.createGain(); fb.gain.value = 0.32;
@@ -109,16 +116,23 @@ export class MusicEngine {
   private get realtime(): boolean { return typeof OfflineAudioContext === 'undefined' || !(this.ctx instanceof OfflineAudioContext); }
 
   // ---------------- graph helpers ----------------
+  /** Hall-like impulse: a short pre-delay, a handful of early reflections per side, then a stereo-decorrelated tail that darkens as it fades. */
   private makeImpulse(seconds: number): AudioBuffer {
     const rate = this.ctx.sampleRate, n = Math.floor(rate * seconds);
     const buf = this.ctx.createBuffer(2, n, rate), r = makeRng(7);
+    const pre = Math.floor(rate * 0.014);
     for (let c = 0; c < 2; c++) {
       const d = buf.getChannelData(c);
-      let lp = 0;
-      for (let i = 0; i < n; i++) {
-        const t = i / n;
-        lp += (r.next() * 2 - 1 - lp) * (0.55 - 0.45 * t); // darker as it decays
-        d[i] = lp * Math.pow(1 - t, 2.6) * (i < 400 ? i / 400 : 1);
+      let lp = 0, lp2 = 0;
+      for (let i = pre; i < n; i++) {
+        const t = (i - pre) / (n - pre);
+        const k = 0.62 - 0.52 * Math.pow(t, 0.6); // high frequencies die first
+        lp += (r.next() * 2 - 1 - lp) * k; lp2 += (lp - lp2) * (0.7 - 0.3 * t);
+        d[i] = lp2 * 1.6 * Math.exp(-5.2 * t) * (1 - Math.exp(-(i - pre) / (rate * 0.012))) * (c ? 1 : 0.97);
+      }
+      for (let e = 0; e < 9; e++) { // early reflections, different on each ear
+        const at = pre + Math.floor(rate * (0.007 + r.next() * 0.075)), amp = (0.5 - e * 0.04) * (r.next() > 0.5 ? 1 : -1);
+        if (at < n) d[at] += amp * 0.8;
       }
     }
     return buf;
@@ -261,7 +275,8 @@ export class MusicEngine {
   private note(kind: LeadKind, t: number, midi: number, dur: number, vel: number, bus: Bus, pan = 0): void {
     if (kind === 'synth') return;
     if (!this.claim(2)) return;
-    const ctx = this.ctx, f = midiToFreq(midi);
+    const ctx = this.ctx, f = midiToFreq(midi), drift = (this.sfxRng.next() - 0.5) * 9; // each note a few cents off, like a real player
+    t += (this.sfxRng.next() - 0.5) * 0.012;
     const env = (peak: number, att: number, decay: number, hold = 0) => {
       const g = ctx.createGain();
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + att);
@@ -270,13 +285,13 @@ export class MusicEngine {
       return g;
     };
     const osc = (type: OscillatorType, hz: number, to: AudioNode, stop: number, cents = 0) => {
-      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz; o.detune.value = cents;
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz; o.detune.value = cents + drift;
       o.connect(to); o.start(t); o.stop(stop); this.track(o); return o;
     };
     const fm = (ratio: number, index: number, decay: number, peak: number, partial = 0) => {
       const g = env(peak * vel, 0.003, decay), m = ctx.createOscillator(), mg = ctx.createGain(), c = ctx.createOscillator();
       mg.gain.setValueAtTime(f * index, t); mg.gain.exponentialRampToValueAtTime(Math.max(1, f * 0.05), t + decay * 0.6);
-      m.frequency.value = f * ratio; c.type = 'sine'; c.frequency.value = f;
+      m.frequency.value = f * ratio; c.type = 'sine'; c.frequency.value = f; c.detune.value = drift;
       m.connect(mg); mg.connect(c.frequency); c.connect(g);
       m.start(t); c.start(t); m.stop(t + decay + 0.1); c.stop(t + decay + 0.1); this.track(c);
       if (partial) osc('sine', f * 4.02, env(peak * vel * partial, 0.002, decay * 0.25), t + decay * 0.3 + 0.05);
@@ -346,7 +361,7 @@ export class MusicEngine {
     const parts: [OscillatorType, number, number, number][] = [[main, f, -7, 0.55], [main, f, 7, 0.55], ['square', f / 2, 0, 0.18]];
     let last: OscillatorNode | null = null;
     for (const [type, hz, cents, amp] of parts) {
-      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz; o.detune.value = cents;
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = hz; o.detune.value = cents + (this.sfxRng.next() - 0.5) * 7;
       vibG.connect(o.detune);
       const og = ctx.createGain(); og.gain.value = amp;
       o.connect(og); og.connect(lp); o.start(t); o.stop(end + 0.15); last = o;

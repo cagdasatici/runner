@@ -47,6 +47,9 @@ Tempo: linear in speed 9 to 24 m/s between the theme's min and max, even BPM, ma
 ## Switching and stingers
 Theme change waits for the next bar line, with a noise riser and cymbal swell. Results starts on the next beat together with the quantised win fanfare. Crash: low-pass sweep + thump, music fades out. Stingers (star, powerup, boardbreak, combo, win) duck music by 6 dB (12 ms attack, ~0.12 s release).
 
+## Warmth (less "computer" sound)
+Music path: tape-style soft saturation (tanh, 2x oversampled), a low shelf (+1.8 dB at 220 Hz) and a -1.5 dB dip at 2.8 kHz before the duck. Reverb is a generated hall impulse (14 ms pre-delay, 9 early reflections per ear, 2.3 s decorrelated stereo tail, high-passed at 180 Hz). Instrument notes (`note()`, synth lead) drift a few cents and ~6 ms off the grid at random, like a human player. No third-party recordings are bundled: the music reacts to speed in layers, which a fixed track cannot do, and no licence has to be tracked.
+
 ## Safety
 Master chain: compressor, limiter, soft clip bounded at 0.92, 9.5 kHz low-pass; music trimmed to 0.2. Voice cap 22 (hats and arps dropped first). Offline check (`node scripts/check-audio.mjs`): 20 s of 5 configurations, peak < 0.95, RMS about -20 dBFS, no NaN.
 
