@@ -7,6 +7,15 @@ export function pickPhotos(names: string[], prefix: string): string[] {
   return names.filter((n) => n.toLowerCase().startsWith(p) && /\.(png|jpe?g|webp)$/i.test(n)).sort();
 }
 
+/** Random finale photo; the bubbles carry the others (all of them when there is only one photo). `rnd` is injectable for tests. */
+export function splitPhotos(urls: string[], rnd: () => number = Math.random): { finale: string; bubbles: string[] } {
+  if (!urls.length) return { finale: '', bubbles: [] };
+  const k = Math.min(urls.length - 1, Math.floor(rnd() * urls.length));
+  const others = urls.filter((_, i) => i !== k);
+  for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+  return { finale: urls[k], bubbles: others.length ? others : urls };
+}
+
 const easeInOut = (u: number) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
 
 /** Centre position (CSS px) of bubble i at time t (s since the wave began), or null when it is not on its path yet / any more. */
@@ -60,6 +69,7 @@ export function loadPhotos(prefix: string, fallbackUrl?: string): Promise<string
 
 /** Plays the wave + finale over the page; returns cancel(). Removes itself after WAVE.total seconds. */
 export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i: number) => void; onFinale?: () => void }): () => void {
+  const { finale: finaleUrl, bubbles: bubbleUrls } = splitPhotos(urls);
   const root = document.createElement('div');
   root.id = 'photo-wave';
   document.body.appendChild(root);
@@ -87,7 +97,7 @@ export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i:
   if (reduced) {
     const grid = document.createElement('div');
     grid.className = 'pw-grid';
-    urls.slice(0, 6).forEach((u) => grid.appendChild(mk('pw-bubble static', u)));
+    bubbleUrls.slice(0, 6).forEach((u) => grid.appendChild(mk('pw-bubble static', u)));
     root.appendChild(grid);
     grid.animate([{ opacity: 0 }, { opacity: 1, offset: 0.4 / 2.6 }, { opacity: 1, offset: 2.2 / 2.6 }, { opacity: 0 }], { duration: 2600, fill: 'forwards' });
     timers.push(window.setTimeout(cancel, 2600));
@@ -97,7 +107,7 @@ export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i:
   const vmin = () => Math.min(window.innerWidth, window.innerHeight);
   const size = () => Math.max(72, Math.min(150, 0.16 * vmin()));
   const bubbles = Array.from({ length: WAVE.count }, (_, i) => {
-    const el = mk('pw-bubble', urls[i % urls.length]);
+    const el = mk('pw-bubble', bubbleUrls[i % bubbleUrls.length]);
     el.style.width = el.style.height = `${size()}px`;
     el.style.visibility = 'hidden';
     root.appendChild(el);
@@ -121,7 +131,7 @@ export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i:
       finale = true;
       const f = document.createElement('div');
       f.className = 'pw-finale';
-      f.appendChild(mk('pw-face', urls[0]));
+      f.appendChild(mk('pw-face', finaleUrl));
       const label = document.createElement('div');
       label.className = 'pw-name';
       label.textContent = `Go ${name}!`;

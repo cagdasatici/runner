@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WAVE, pickPhotos, wavePos } from '../src/ui/photoWave';
+import { WAVE, pickPhotos, splitPhotos, wavePos } from '../src/ui/photoWave';
 
 describe('photoWave', () => {
   it('picks only the kid\'s image files, sorted', () => {
@@ -24,5 +24,15 @@ describe('photoWave', () => {
   });
   it('the last bubble ends before the overlay does', () => {
     expect((WAVE.count - 1) * WAVE.stagger + WAVE.travel).toBeLessThanOrEqual(WAVE.total);
+  });
+  it('splits one random finale photo from the bubble photos', () => {
+    const urls = ['a', 'b', 'c'];
+    for (const r of [0, 0.4, 0.99]) {
+      const { finale, bubbles } = splitPhotos(urls, () => r);
+      expect(urls).toContain(finale);
+      expect(bubbles).not.toContain(finale);
+      expect(bubbles.length).toBe(2);
+    }
+    expect(splitPhotos(['a'], () => 0.5)).toEqual({ finale: 'a', bubbles: ['a'] });
   });
 });

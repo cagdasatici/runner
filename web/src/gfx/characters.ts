@@ -76,21 +76,21 @@ export const CHARACTERS: readonly CharacterDef[] = [
   kid('arel', 'Arel', 1.3, {
     photoSet: 'arel',
     bigHead: 1.3,
-    face: { iris: 0x5a3a22, lip: 0xc4695f, smile: 'closed', hair: [0xb08a5a, 0xc9a574], style: 'messy', blush: 0.16, brow: 0x7a5a38, browThick: 0.017,
-      photo: { url: `${import.meta.env.BASE_URL}faces/arel3.png`, eyes: [[121, 132], [170, 133]], mouth: [144, 187], mouthDrop: 0.36 } },
-    recolor: { Hair: 0xb08a5a, Eyebrows: 0x6b5030, Green: 0x3a9d5d, LightGreen: 0x4fb46f, Brown: 0x334155, Brown2: 0x1e293b },
+    face: { iris: 0x5a3a22, lip: 0xc4695f, smile: 'closed', hair: [0x94683f, 0xb98f5e], style: 'messy', blush: 0.16, brow: 0x7a5a38, browThick: 0.017,
+      photo: { url: `${import.meta.env.BASE_URL}faces/arel5.jpg`, eyes: [[251, 479], [484, 470]], mouth: [353, 735], mouthDrop: 0.34 } },
+    recolor: { Hair: 0x94683f, Eyebrows: 0x6b5030, Green: 0xe0644c, LightGreen: 0xee7a62, Brown: 0x334155, Brown2: 0x1e293b },
   }),
   kid('nora', 'Nora', 1.35, {
     photoSet: 'nora',
     bigHead: 1.3,
     // Brown/Brown2 are the trousers: skin-coloured so the legs under the skirt read as bare; Green/LightGreen is the bodice
-    recolor: { Hair: 0xa8774c, Eyebrows: 0x7a5a38, Green: 0xf4f4f6, LightGreen: 0xffffff, Brown: 0xf2c9a6, Brown2: 0xe8bb96 },
-    face: { iris: 0x7a5a2c, lip: 0xd9707a, smile: 'open', hair: [0x9c6f45, 0xc29566], style: 'long', glasses: true, lashes: true, blush: 0.14, brow: 0x9a7448, browThick: 0.011,
+    recolor: { Hair: 0x92704f, Eyebrows: 0x7a5a38, Green: 0x7fd1b0, LightGreen: 0xa6e3c9, Brown: 0xf2c9a6, Brown2: 0xe8bb96 },
+    face: { iris: 0x7a5a2c, lip: 0xd9707a, smile: 'open', hair: [0x8a6a4a, 0xb89b78], style: 'long', glasses: true, lashes: true, blush: 0.14, brow: 0x9a7448, browThick: 0.011,
       photo: { url: `${import.meta.env.BASE_URL}faces/nora1.png`, eyes: [[84, 105], [118, 104]], mouth: [101, 143], mouthDrop: 0.35 } },
     extras: ['dress'],
   }),
   {
-    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1, messes: true,
+    id: 'toby', name: 'Toby', model: '', procedural: 'maltese-senior', height: 1.05, slide: 'tuck', yaw: 0, runSpeed: 1.1, messes: true, photoSet: 'toby',
     clips: { run: 'run', jump: 'jump', slide: 'slide', crash: 'crash', idle: 'idle', fly: 'fly', board: 'idle' },
   },
 ];
