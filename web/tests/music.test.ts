@@ -60,7 +60,8 @@ describe('layers', () => {
     expect(levelFor(18, false, false)).toBe(2);
     expect(levelFor(22, false, false)).toBe(3);
     expect(levelFor(15, true, false)).toBe(2);
-    expect(levelFor(19, true, false)).toBe(3);
+    expect(levelFor(19, true, false)).toBe(2); // boost never adds the top layer
+    expect(levelFor(22, true, false)).toBe(2);
     expect(levelFor(8, false, true)).toBe(3);
   });
   it('hysteresis keeps a layer until speed drops 0.8 below', () => {

@@ -22,6 +22,7 @@ export interface NoteEvent {
 export const STEPS_PER_BAR = 16;
 export const BEATS_PER_BAR = 4;
 export const LEVEL_SPEEDS = [0, 14, 18, 22] as const;   // m/s at which layers 1..3 come in
+export const BOOST_MAX_LEVEL = 2;                    // the busiest layer stays off while boosting (lighter on the iPad)
 export const BOOST_SPEED_BONUS = 3;                     // held boost counts as +3 m/s
 export const HYSTERESIS = 0.8;                          // m/s below a threshold before a layer leaves
 export const FADE_IN_BARS = 1;
@@ -49,7 +50,7 @@ export function levelFor(speed: number, boost: boolean, powerUp: boolean, curren
     const th = LEVEL_SPEEDS[l] - (current >= l ? HYSTERESIS : 0);
     if (eff >= th) lvl = l;
   }
-  return powerUp ? 3 : lvl;
+  return powerUp ? 3 : Math.min(lvl, boost ? BOOST_MAX_LEVEL : 3);
 }
 
 export interface LayerRamp { layer: Layer; to: number; bars: number }

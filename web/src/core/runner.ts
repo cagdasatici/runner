@@ -97,9 +97,9 @@ export const Power = {
  * (tunable). Only the forward speed changes: the tick-based acceleration curve, jump/slide timers and lane
  * switching stay the same, and collisions use the real boosted distance per tick. Ratings ignore boost.
  */
-export const Boost = { factor: 1.6, maxSpeed: 16, flyMaxSpeed: 26 } as const;
+export const Boost = { factor: 1.6, maxSpeed: 28, flyMaxSpeed: 40 } as const;
 
-/** Boosted forward speed: `factor` times the normal speed, but never above a fixed cap (so a long hold can't keep speeding up; iPad froze at 32 m/s+). */
+/** Boosted forward speed: `factor` times the normal speed, but never above a fixed cap (held boost stays at one steady speed instead of racing ahead as the run speeds up; the cap sits above the normal top speed, so boost is always clearly faster). */
 export function boostedSpeed(speed: number, flying: boolean): number {
   const factor = flying ? Power.flyBoostSpeed : Boost.factor, cap = flying ? Boost.flyMaxSpeed : Boost.maxSpeed;
   return Math.max(speed, Math.min(speed * factor, cap));

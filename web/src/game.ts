@@ -14,6 +14,7 @@ import { characterById, loadCharacter } from './gfx/characters';
 import { CoinRenderer } from './gfx/coins';
 import { MessRenderer } from './gfx/messes';
 import { Ambient } from './gfx/ambient';
+import { BlobShadow, Cameos, CAMEO_NAMES, type CameoEvent } from './gfx/cameos';
 import { PowerVisuals } from './gfx/powerups';
 import { MagnetEffect } from './gfx/magnet';
 import { ParticlePool } from './gfx/effects';
@@ -29,6 +30,9 @@ export type Quality = 'low' | 'high';
 const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 2048, LOW_SHADOW = 512;
 
 const VIEW_AHEAD = 115;
+/** iPad / touch tablets: fewer pixels, shorter view distance, tighter fog and sparser ambient particles (steadier frame rate, less heat). */
+export const isTablet = (): boolean => typeof navigator !== 'undefined' && (/iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const TABLET_DPR = 1.5, TABLET_VIEW_AHEAD = 90, TABLET_FOG = 0.8;
 const CELEBRATE_SECONDS = 2.8; // fireworks + celebration after the finish line, then the results card
 const COAST_SECONDS = 1.0;      // the runner jogs on past the line, then stops to celebrate
 const REACTION_SECONDS = 3.2; // the dog's face close-up after a mess
@@ -42,6 +46,8 @@ export interface GameEvents {
   onStar(taken: number): void;
   onProgress(fraction: number): void;
   onBoost?(on: boolean): void;
+  /** A dog cameo appeared, got bonked into the sky, or was hopped over (Bella and Toby pop up when neither is the player). */
+  onCameo?(e: CameoEvent & { name: string }): void;
   onStreak?: (n: number) => void;
   onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
@@ -138,6 +144,11 @@ export class Game {
   private stinkT = 0;
   private messes = new MessRenderer();
   private ambient = new Ambient();
+  private cameos = new Cameos((e) => {
+    if (e.type === 'bonk') this.shake = Math.max(this.shake, 0.14);
+    this.events.onCameo?.({ ...e, name: CAMEO_NAMES[e.who] });
+  }, !isTablet());
+  private runnerBlob = new BlobShadow(1.7);
   private reactionCam = new THREE.PerspectiveCamera(32, 1, 0.05, 20);
   private headPos = new THREE.Vector3();
   private stars = new GoldenStarRenderer();
@@ -173,6 +184,8 @@ export class Game {
   private frameDt = 0;
   private popped = new Set<number>(); // coin ids already shown popping
   private pixelRatio: number;
+  private readonly tablet = isTablet();
+  private readonly viewAhead = isTablet() ? TABLET_VIEW_AHEAD : VIEW_AHEAD;
   private frames = 0;
 
   constructor(canvas: HTMLCanvasElement, private events: GameEvents, forced?: Quality) {
@@ -182,12 +195,13 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? HIGH_DPR : LOW_DPR);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.quality === 'high' ? (this.tablet ? TABLET_DPR : HIGH_DPR) : LOW_DPR);
     setMaxAnisotropy(Math.min(this.renderer.capabilities.getMaxAnisotropy(), this.quality === 'high' ? 8 : 2));
     this.renderer.setPixelRatio(this.pixelRatio);
     this.mats = createMaterials();
     this.envMats = createEnvMaterials();
     this.env = new Environment(this.scene, this.renderer, this.envMats, this.quality === 'high' ? HIGH_SHADOW : LOW_SHADOW);
+    if (this.tablet) { this.env.fogScale = TABLET_FOG; this.ambient.density = 0.5; }
     this.post = new PostFx(this.renderer);
     this.post.enabled = this.quality === 'high';
     this.applyTheme(MENU_THEME);
@@ -196,7 +210,7 @@ export class Game {
     this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
     this.figure.preloadAll();
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.ambient.additive.points, this.ambient.normal.points, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.ambient.additive.points, this.ambient.normal.points, this.cameos.group, this.runnerBlob.mesh, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -255,15 +269,15 @@ export class Game {
 
   /** Endless run. `skipSeconds` fast-forwards the simulation before the first frame (screenshots/tests; 0 in normal play). */
   startRun(seed: bigint, autoplay: boolean, idle: boolean, skipSeconds = 0, opts: StartOptions = {}): void {
-    this.begin(endlessPlay(seed, opts), autoplay, idle, skipSeconds);
+    this.begin(endlessPlay(seed, opts), autoplay, idle, skipSeconds, Number(seed & 0x7fffffffn));
   }
 
   /** Journey level n (1…120). */
   startLevel(n: number, autoplay: boolean, idle: boolean, skipSeconds = 0, opts: StartOptions = {}): void {
-    this.begin(levelPlay(n, opts), autoplay, idle, skipSeconds);
+    this.begin(levelPlay(n, opts), autoplay, idle, skipSeconds, 7919 * n + 1);
   }
 
-  private begin(play: Play, autoplay: boolean, idle: boolean, skipSeconds: number): void {
+  private begin(play: Play, autoplay: boolean, idle: boolean, skipSeconds: number, seedNum: number): void {
     this.mode = 'playing';
     this.autoplay = autoplay;
     this.idle = idle;
@@ -287,6 +301,7 @@ export class Game {
     this.events.onReaction?.(null);
     this.clearDynamic();
     this.clearSegments();
+    this.cameos.reset(seedNum, !characterById(this.figure.characterId).messes, 0); // Bella/Toby cameo only when neither is the player
     const level = play.level;
     this.applyTheme(level ? themeForWorld(level.level.spec.world) : ENDLESS_THEME);
     this.stars.set(level ? level.level.stars : []);
@@ -297,6 +312,10 @@ export class Game {
     for (let i = 0; i < skipSeconds / Runner.dt && !play.over; i++) play.tick(this.nextMove());
     this.sync();
   }
+
+  /** Testing only (?cameo=1): every cameo slot gets a dog. */
+  debugCameoChance(v: number): void { this.cameos.chance = v; this.cameos.forceLane = v >= 1 ? 1 : null; }
+  get cameoCount(): number { return this.cameos.activeCount; }
 
   get isPlaying(): boolean { return this.mode === 'playing'; }
 
@@ -530,13 +549,13 @@ export class Game {
   private sync(): void {
     const p = this.play!, s = p.state, track = p.track;
     const firstSeg = Math.max(-1, Math.trunc((s.z - 10) / SEGMENT_LENGTH) - 1);
-    const lastSeg = Math.trunc((s.z + VIEW_AHEAD) / SEGMENT_LENGTH);
+    const lastSeg = Math.trunc((s.z + this.viewAhead) / SEGMENT_LENGTH);
     for (let k = firstSeg; k <= lastSeg; k++) if (!this.segments.has(k)) this.addSegment(k);
     for (const [k, g] of this.segments) if (k < firstSeg) { this.scene.remove(g); disposeGroup(g); this.segments.delete(k); }
 
     const live = new Set<number>();
     for (const o of track.obstacles) {
-      if (o.z >= s.z + VIEW_AHEAD || o.z + obstacleLength(o) < s.z - 10) continue;
+      if (o.z >= s.z + this.viewAhead || o.z + obstacleLength(o) < s.z - 10) continue;
       live.add(o.id);
       if (!this.obstacleNodes.has(o.id)) { const g = makeObstacle(o, this.envMats, this.theme); this.obstacleNodes.set(o.id, g); this.scene.add(g); }
     }
@@ -544,7 +563,7 @@ export class Game {
 
     const visible: Coin[] = [];
     for (const c of track.coins) {
-      if (c.z >= s.z + VIEW_AHEAD || c.z < s.z - 5) continue;
+      if (c.z >= s.z + this.viewAhead || c.z < s.z - 5) continue;
       if (s.collected.has(c.id)) {
         if (!this.popped.has(c.id)) {
           this.popped.add(c.id);
@@ -572,8 +591,10 @@ export class Game {
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
     const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
-    this.messes.update(track.messes.filter((m) => !s.collected.has(m.id) && m.z < s.z + VIEW_AHEAD && m.z > s.z - 5), this.time);
-    this.power.update(vs, track.pickups, this.time, VIEW_AHEAD, this.frameDt, this.glow);
+    this.messes.update(track.messes.filter((m) => !s.collected.has(m.id) && m.z < s.z + this.viewAhead && m.z > s.z - 5), this.time);
+    this.power.update(vs, track.pickups, this.time, this.viewAhead, this.frameDt, this.glow);
+    this.cameos.update({ x: s.x, y: s.y, z: s.z, speed: speedOf(s, p.pace), flying: s.fly > 0 || s.descend > 0 }, track, this.frameDt, this.time, this.glow, s.floor);
+    this.runnerBlob.set(s.x, s.floor, -s.z, s.y - s.floor);
     const celebrating = !!p.level?.finished && this.finishT >= COAST_SECONDS;
     if (this.debugPose === 'celebrate') this.figure.celebrate(this.time % 3, this.frameDt, vs);
     else if (celebrating) this.figure.celebrate(this.finishT - COAST_SECONDS, this.frameDt, vs);
@@ -594,6 +615,7 @@ export class Game {
     }
     this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
+    this.post.setRush(this.boostFov * (this.tablet ? 0.7 : 1));
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
     const flyingNow = s.fly > 0 || s.descend > 0;
@@ -639,6 +661,8 @@ export class Game {
     this.popped.clear();
     this.coins.clearPops();
     this.messes.clear();
+    this.cameos.reset(0, false, 0);
+    this.runnerBlob.mesh.visible = false;
     this.coins.update([], 0, 0);
     this.dust.clear();
     this.glow.clear();
@@ -665,9 +689,9 @@ export class Game {
   setQuality(q: Quality): void {
     this.quality = q;
     this.post.enabled = q === 'high';
-    this.ambient.density = q === 'high' ? 1 : 0.4;
+    this.ambient.density = (q === 'high' ? 1 : 0.4) * (this.tablet ? 0.5 : 1);
     this.env.setShadowSize(q === 'high' ? HIGH_SHADOW : LOW_SHADOW);
-    this.pixelRatio = Math.min(this.pixelRatio, q === 'high' ? HIGH_DPR : LOW_DPR);
+    this.pixelRatio = Math.min(this.pixelRatio, q === 'high' ? (this.tablet ? TABLET_DPR : HIGH_DPR) : LOW_DPR);
     this.renderer.setPixelRatio(this.pixelRatio);
     this.resize();
   }

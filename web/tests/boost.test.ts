@@ -16,10 +16,13 @@ describe('Boost', () => {
   });
   it('boosted speed is capped, so a long hold never keeps speeding up', () => {
     expect(boostedSpeed(10, false)).toBeCloseTo(10 * Boost.factor, 9);
-    for (const v of [12, 16, 20]) expect(boostedSpeed(v, false)).toBe(Math.max(v, Boost.maxSpeed));
-    expect(boostedSpeed(10, true)).toBeCloseTo(Boost.flyMaxSpeed, 9);
+    expect(boostedSpeed(20, false)).toBe(Boost.maxSpeed); // 1.6 × 20 = 32 → capped
+    expect(boostedSpeed(18, false)).toBe(Boost.maxSpeed);
     expect(boostedSpeed(20, true)).toBe(Boost.flyMaxSpeed);
     expect(boostedSpeed(50, false)).toBe(50); // never slower than not boosting
+  });
+  it('is always much faster than not boosting, even at top speed', () => {
+    for (const v of [10, 14, 18, 20]) expect(boostedSpeed(v, false) / v).toBeGreaterThanOrEqual(1.4);
   });
   it('boost=false is identical to the default call', () => {
     expect(step(startState(), 'none', empty)).toEqual(step(startState(), 'none', empty, undefined, false));

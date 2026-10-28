@@ -104,6 +104,10 @@ function audioPower(p: { board: number; magnet: number; sneakers: number; double
 
 let lastMess: 'poop' | 'pee' = 'poop';
 const game = new Game($('gl'), {
+  onCameo: (e) => {
+    if (e.type === 'bonk') { showToast(`${e.name} went flying! 🐶💫`); audio.sfx('boardbreak'); }
+    else if (e.type === 'dodge') showToast(`Hopped over ${e.name}!`);
+  },
   onBoost: (on) => { document.body.classList.toggle('boosting', on); audio.setBoost(on); },
   onCoinFly: flyCoin,
   onScore: (score, coins) => { $('score').textContent = String(score); $('coins').textContent = String(coins); },
@@ -184,6 +188,14 @@ const game = new Game($('gl'), {
     audio.sfx(text.startsWith('Close') ? 'nearmiss' : text.startsWith('Combo') ? 'combo' : text.startsWith('Board') ? 'boardbreak' : 'lane');
   },
 }, qualityFlag());
+
+function showToast(text: string): void {
+  const el = $('toast');
+  el.textContent = text;
+  el.classList.remove('show');
+  void el.offsetWidth; // restart the animation
+  el.classList.add('show');
+}
 
 const RING_ICONS: [keyof PowerHud, string][] = [['board', '🛹'], ['magnet', '🧲'], ['sneakers', '👟'], ['double', '×2'], ['fly', '🚀']];
 function renderPowers(p: PowerHud): void {
@@ -366,6 +378,7 @@ const charFlag = params.get('char');
 if (charFlag && CHARACTERS.some((c) => c.id === charFlag)) game.setCharacter(charFlag);
 const poseFlag = params.get('pose');
 if (poseFlag) game.debugPose = poseFlag;
+if (params.get('cameo') === '1') game.debugCameoChance(1);
 // Debug only (?debug=1&mess=poop|pee): drop a mess 6 m ahead once the run has been going for 150 ticks.
 const messFlag = params.get('mess');
 if (params.get('debug') === '1' && (messFlag === 'poop' || messFlag === 'pee')) {
@@ -480,6 +493,8 @@ const keys: Record<string, Move> = { ArrowLeft: 'left', ArrowRight: 'right', Arr
 window.addEventListener('keydown', (e) => { if (e.key === ' ' && screen === 'hud') { e.preventDefault(); game.setBoost(true); return; } const m = keys[e.key]; if (m) { e.preventDefault(); if (e.repeat) return; game.queue(m); } });
 window.addEventListener('keyup', (e) => { if (e.key === ' ') game.setBoost(false); });
 window.addEventListener('blur', releaseBoost);
+// iPad: a system gesture or an app switch can swallow the touch-up; never leave boost on without a finger
+document.addEventListener('visibilitychange', () => { if (document.hidden) releaseBoost(); });
 // iPad Safari: block pinch-zoom, double-tap zoom and the context menu; only the map may scroll
 for (const ev of ['gesturestart', 'gesturechange', 'dblclick', 'contextmenu']) document.addEventListener(ev, (e) => e.preventDefault());
 document.addEventListener('touchmove', (e) => { if (!(e.target as Element).closest?.('.scroll')) e.preventDefault(); }, { passive: false });
@@ -492,21 +507,26 @@ document.addEventListener('visibilitychange', () => {
 
 // --- debug overlay (?debug=1): fps and draw calls ---
 let debugEl: HTMLDivElement | null = null;
-if (params.get('debug') === '1') {
+if (params.get('debug') === '1' || params.get('perf') === '1') {
   debugEl = document.createElement('div');
   debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000a;padding:4px 8px;z-index:9';
   document.body.appendChild(debugEl);
-  (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, version: __APP_VERSION__, unlocked: progress.unlocked, totalStars: progress.totalStars });
+  (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), cameos: game.cameoCount, draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, version: __APP_VERSION__, unlocked: progress.unlocked, totalStars: progress.totalStars });
 }
-let fpsFrames = 0, fpsStart = performance.now();
+let fpsFrames = 0, fpsStart = performance.now(), lastFrameAt = 0, worstFrame = 0, worstAt = 0;
 
 function loop(now: number): void {
   if (screen === 'map') game.resetClock(); // the map covers the screen: skip 3D work
   else game.frame(now);
   if (debugEl) {
     fpsFrames++;
+    if (lastFrameAt) {
+      const ft = now - lastFrameAt;
+      if (ft > worstFrame || now - worstAt > 5000) { worstFrame = ft; worstAt = now; } // worst frame of the last ~5 s
+    }
+    lastFrameAt = now;
     if (now - fpsStart >= 1000) {
-      debugEl.textContent = `${fpsFrames} fps · ${game.drawCalls()} draws · ${Math.round(game.triangles() / 1000)}k tris · ${game.renderer.getPixelRatio()}x`;
+      debugEl.textContent = `${fpsFrames} fps · worst ${Math.round(worstFrame)} ms · ${game.drawCalls()} draws · ${Math.round(game.triangles() / 1000)}k tris · ${game.renderer.getPixelRatio()}x · ${game.quality}${document.body.classList.contains('boosting') ? ' · BOOST' : ''}`;
       fpsFrames = 0;
       fpsStart = now;
     }

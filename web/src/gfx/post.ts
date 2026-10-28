@@ -25,10 +25,17 @@ void main() {
 }`;
 
 const COMPOSITE = `
-uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform vec2 texel;
+uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform float rush; uniform vec2 texel;
 varying vec2 vUv;
 void main() {
-  vec3 c = texture2D(scene, vUv).rgb + texture2D(bloom, vUv).rgb * strength;
+  vec3 base = texture2D(scene, vUv).rgb;
+  if (rush > 0.01) { // boost: radial speed blur that grows towards the screen edge (centre stays sharp)
+    vec2 dir = (vUv - 0.5) * rush * 0.05;
+    vec3 acc = base;
+    for (int i = 1; i <= 4; i++) acc += texture2D(scene, vUv - dir * float(i)).rgb;
+    base = mix(base, acc * 0.2, smoothstep(0.12, 0.65, length(vUv - 0.5)));
+  }
+  vec3 c = base + texture2D(bloom, vUv).rgb * strength;
   c *= tint;
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = mix(vec3(l), c, sat);
@@ -69,7 +76,7 @@ export class PostFx {
     this.blur = mk(BLUR, { src: { value: null }, dir: { value: new THREE.Vector2() } });
     this.comp = mk(COMPOSITE, {
       scene: { value: null }, bloom: { value: null }, strength: { value: 0.3 }, tint: { value: new THREE.Vector3(1, 1, 1) },
-      sat: { value: 1 }, contrast: { value: 1 }, hd: { value: 1 }, texel: { value: new THREE.Vector2() },
+      sat: { value: 1 }, contrast: { value: 1 }, hd: { value: 1 }, rush: { value: 0 }, texel: { value: new THREE.Vector2() },
     });
     this.quad = new THREE.Mesh(tri, this.bright);
     this.quad.frustumCulled = false;
@@ -96,6 +103,9 @@ export class PostFx {
     u.contrast.value = t.grade.contrast;
     this.bright.uniforms.threshold.value = t.bloom.threshold;
   }
+
+  /** 0…1 boost speed blur (eased by the game). */
+  setRush(v: number): void { this.comp.uniforms.rush.value = v; }
 
   private pass(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null): void {
     this.quad.material = mat;

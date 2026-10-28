@@ -19,6 +19,8 @@ const SHADOW_BOX = 14;
 export class Environment {
   readonly sun = new THREE.DirectionalLight(0xffffff, 2.5);
   readonly hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5);
+  /** < 1 pulls the fog in (tablets draw a shorter distance, the fog hides where the world ends). */
+  fogScale = 1;
   readonly rim = new THREE.DirectionalLight(0xbfe3ff, 0.55); // cool back light so silhouettes pop; no shadows
   private backdrop: THREE.Mesh;
   private backdropMat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, fog: false });
@@ -69,7 +71,7 @@ export class Environment {
     this.scene.background = null;
     this.envTex = this.pmrem.fromEquirectangular(this.skyTex).texture;
     this.scene.environment = this.envTex;
-    this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near * 1.25, t.fog.far * 1.2);
+    this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near * 1.25 * this.fogScale, t.fog.far * 1.2 * this.fogScale);
     const tint = t.stars > 0.5 ? 0x8fa8ff : t.sky.mid === 0xf2788a ? 0xffb38a : 0xffd9a8; // night: cooler, sunset: warmer, day: golden hour
     this.dome.set(this.skyTex, tint, t.stars > 0.5 ? 0.35 : 1);
     this.fogBase.setHex(t.fog.color); this.fogTint.setHex(tint);

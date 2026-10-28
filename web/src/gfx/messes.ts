@@ -48,7 +48,8 @@ export function makePoop(scale = 1): THREE.Group {
   return g;
 }
 
-function makePuddle(id: number): THREE.Group {
+/** A flat shiny puddle (its outline geometry is per id and must be disposed by the owner). */
+export function makePuddle(id: number): THREE.Group {
   const geo = new THREE.CircleGeometry(0.75, 24).rotateX(-Math.PI / 2);
   const p = geo.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < p.count; i++) {
