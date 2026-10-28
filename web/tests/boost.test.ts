@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Boost, Runner, startState, step, speedAtTick, type RunnerState } from '../src/core/runner';
+import { Boost, boostedSpeed, Runner, startState, step, speedAtTick, type RunnerState } from '../src/core/runner';
 import { Track } from '../src/core/track';
 
 const empty = Track.fixed([]);
@@ -11,9 +11,15 @@ function run(boostAt: (i: number) => boolean, from: RunnerState = startState()):
 }
 
 describe('Boost', () => {
-  it('covers factor times the distance of a normal run on flat ground', () => {
-    const n = run(() => false), b = run(() => true);
-    expect(b.z / n.z).toBeCloseTo(Boost.factor, 6);
+  it('covers more distance than a normal run on flat ground', () => {
+    expect(run(() => true).z).toBeGreaterThan(run(() => false).z);
+  });
+  it('boosted speed is capped, so a long hold never keeps speeding up', () => {
+    expect(boostedSpeed(10, false)).toBeCloseTo(10 * Boost.factor, 9);
+    for (const v of [12, 16, 20]) expect(boostedSpeed(v, false)).toBe(Math.max(v, Boost.maxSpeed));
+    expect(boostedSpeed(10, true)).toBeCloseTo(Boost.flyMaxSpeed, 9);
+    expect(boostedSpeed(20, true)).toBe(Boost.flyMaxSpeed);
+    expect(boostedSpeed(50, false)).toBe(50); // never slower than not boosting
   });
   it('boost=false is identical to the default call', () => {
     expect(step(startState(), 'none', empty)).toEqual(step(startState(), 'none', empty, undefined, false));

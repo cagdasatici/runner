@@ -97,7 +97,13 @@ export const Power = {
  * (tunable). Only the forward speed changes: the tick-based acceleration curve, jump/slide timers and lane
  * switching stay the same, and collisions use the real boosted distance per tick. Ratings ignore boost.
  */
-export const Boost = { factor: 1.6 } as const;
+export const Boost = { factor: 1.6, maxSpeed: 16, flyMaxSpeed: 26 } as const;
+
+/** Boosted forward speed: `factor` times the normal speed, but never above a fixed cap (so a long hold can't keep speeding up; iPad froze at 32 m/s+). */
+export function boostedSpeed(speed: number, flying: boolean): number {
+  const factor = flying ? Power.flyBoostSpeed : Boost.factor, cap = flying ? Boost.flyMaxSpeed : Boost.maxSpeed;
+  return Math.max(speed, Math.min(speed * factor, cap));
+}
 
 /** How fast a run goes: start speed, gain per second, top speed (m/s). Endless mode uses ENDLESS_PACE. */
 export interface Pace {
@@ -232,7 +238,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     s.flyUp = Math.min(Power.flyRiseTicks, s.flyUp + 1);
     s.y = s.flyFrom + (Power.flyHeight - s.flyFrom) * ease(s.flyUp / Power.flyRiseTicks);
     if (s.fly === 0) { // time is up: pick a clear lane and start the descent
-      s.lane = pickLandingLane(track, s.lane, s.z, speed * Power.flyBoostSpeed);
+      s.lane = pickLandingLane(track, s.lane, s.z, boost ? boostedSpeed(speed, true) : speed);
       s.descend = Power.flyDescendTicks;
       s.iframes = Power.flyDescendTicks + Power.iframesLanding;
     }
@@ -244,7 +250,7 @@ export function step(prev: RunnerState, move: Move, track: Track, pace: Pace = E
     s.y += s.vy * Runner.dt;
   }
   if (s.slideTicks > 0) s.slideTicks -= 1;
-  s.z += speed * (boost ? (prev.fly > 0 ? Power.flyBoostSpeed : Boost.factor) : 1) * Runner.dt;
+  s.z += (boost ? boostedSpeed(speed, prev.fly > 0) : speed) * Runner.dt;
   s.tick += 1;
   // land on, or ride up, whatever is under the feet now
   s.floor = floorAt(s.x, s.z, track);
