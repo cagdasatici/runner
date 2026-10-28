@@ -33,16 +33,35 @@ export function wavePos(i: number, t: number, vw: number, vh: number, size: numb
 
 const cache = new Map<string, Promise<string[]>>();
 
-const canLoad = (url: string) => new Promise<boolean>((res) => {
+const MAX_PX = 640;
+
+/**
+ * Loads and fully decodes one picture, then hands back a small (<= MAX_PX) copy as an object URL, or null when it will not load.
+ * Big photos decoded lazily were the cause of empty circles: the bubble showed before the picture was ready (or after iOS dropped it).
+ * The copy is tiny, so it stays decoded and the wave never waits on it. Falls back to the original url if the canvas route fails.
+ */
+const prepare = (url: string) => new Promise<string | null>((res) => {
   const img = new Image();
-  img.onload = () => res(true);
-  img.onerror = () => res(false);
+  img.onerror = () => res(null);
+  img.onload = async () => {
+    try {
+      await img.decode?.();
+      const k = Math.min(1, MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const c = cv.getContext('2d');
+      if (!c) throw new Error('no canvas');
+      c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+      c.drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob((b) => res(b ? URL.createObjectURL(b) : url), 'image/jpeg', 0.9);
+    } catch { res(url); }
+  };
   img.src = url;
 });
 
 async function loadAll(urls: string[]): Promise<string[]> {
-  const ok = await Promise.all(urls.map(canLoad));
-  return urls.filter((_, i) => ok[i]);
+  const ok = await Promise.all(urls.map(prepare));
+  return ok.filter((u): u is string => !!u);
 }
 
 /** Preloads a kid's photos (listed by faces/index.json, else the fallback url); resolves to the URLs that loaded. Memoized per prefix. */
@@ -87,6 +106,7 @@ export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i:
     const d = document.createElement('div');
     d.className = cls;
     const img = document.createElement('img');
+    img.decoding = 'sync';
     img.src = url;
     img.alt = '';
     d.appendChild(img);
@@ -115,6 +135,15 @@ export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i:
   });
   const popped = new Array<boolean>(WAVE.count).fill(false);
   let finale = false;
+  const f = document.createElement('div');
+  f.className = 'pw-finale';
+  f.style.visibility = 'hidden';
+  f.appendChild(mk('pw-face', finaleUrl));
+  const label = document.createElement('div');
+  label.className = 'pw-name';
+  label.textContent = `Go ${name}!`;
+  f.appendChild(label);
+  root.appendChild(f);
   const t0 = performance.now();
   const frame = () => {
     if (done) return;
@@ -129,14 +158,7 @@ export function playPhotoWave(urls: string[], name: string, hooks: { onPop?: (i:
     });
     if (!finale && t >= WAVE.finaleAt) {
       finale = true;
-      const f = document.createElement('div');
-      f.className = 'pw-finale';
-      f.appendChild(mk('pw-face', finaleUrl));
-      const label = document.createElement('div');
-      label.className = 'pw-name';
-      label.textContent = `Go ${name}!`;
-      f.appendChild(label);
-      root.appendChild(f);
+      f.style.visibility = 'visible';
       const rest = (WAVE.total - WAVE.finaleAt) * 1000;
       f.animate([{ transform: 'scale(0)', opacity: 1 }, { transform: 'scale(1.1)', opacity: 1, offset: 0.25 }, { transform: 'scale(1)', opacity: 1, offset: 0.4 },
         { transform: 'scale(1)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 0 }], { duration: rest, fill: 'forwards' });
