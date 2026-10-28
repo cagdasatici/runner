@@ -3,7 +3,7 @@
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-const OK_EXT = /\.(js|css|html|png|svg|glb|webmanifest)$/i;
+const OK_EXT = /\.(js|css|html|png|svg|glb|hdr|webmanifest)$/i; // hdr = CC0 sky lighting maps (public/hdri)
 const PRIVATE = /(^|\/)(faces|support|photo|push|vapid|subscribers?)(\/|[-_.]|$)|\.(jpe?g|webp|heic|key|pem|env)$/i;
 
 export function checkFiles(files) {

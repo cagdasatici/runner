@@ -1,0 +1,4 @@
+Third-party assets (all CC0 / public domain, no attribution required; credited anyway):
+- Textures: ambientCG.com (Gravel023, PavingStones070, Asphalt031, Concrete034)
+- Sky lighting HDRIs: Poly Haven (polyhaven.com): kloppenheim_06_puresky, venice_sunset, dikhololo_night
+- 3D characters/animals: see public/models

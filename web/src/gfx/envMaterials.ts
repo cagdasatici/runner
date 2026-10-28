@@ -19,7 +19,9 @@ export function createEnvMaterials() {
       map: facade.map, vertexColors: true, emissive: 0xffffff, emissiveMap: facade.glow, emissiveIntensity: 0.1,
     }),
     atlas: new THREE.MeshStandardMaterial({ map: atlas, vertexColors: true, roughness: 0.55, metalness: 0.0, envMapIntensity: 0.45 }),
-    gravel: new THREE.MeshLambertMaterial({ map: T.gravelTexture() }),
+    // real scanned ballast and paving (CC0, ambientCG) with normal maps: the track bed and pavements are on screen all the time
+    gravel: new THREE.MeshLambertMaterial({ map: T.photoTexture('gravel.png'), normalMap: T.photoTexture('gravel_n.png', false), normalScale: new THREE.Vector2(1.1, 1.1) }),
+    paving: new THREE.MeshLambertMaterial({ map: T.photoTexture('paving.png'), normalMap: T.photoTexture('paving_n.png', false), normalScale: new THREE.Vector2(0.9, 0.9), vertexColors: true }),
     finishBanner: new THREE.MeshLambertMaterial({ map: T.finishBannerTexture() }),
     checker: new THREE.MeshLambertMaterial({ map: T.checkerTexture() }),
   };
@@ -29,5 +31,5 @@ export type EnvMaterials = ReturnType<typeof createEnvMaterials>;
 /** Retints the shared materials for a theme (geometry colours are baked per segment when it is built). */
 export function applyThemeToMaterials(m: EnvMaterials, t: Theme): void {
   m.facade.emissiveIntensity = t.windowGlow;
-  m.gravel.color.setHex(t.ground.gravel);
+  m.gravel.color.setHex(t.ground.gravel).multiplyScalar(0.55); // the photo is brighter than the old painted ballast
 }

@@ -8,9 +8,9 @@ import { applyDelta, changedFiles, sha16, type Manifest } from '../src/ui/delta'
 
 describe('public update package', () => {
   it('refuses photos, faces and private-looking files', () => {
-    for (const bad of ['faces/arel1.png', 'faces/index.json', 'photo-1.png', 'a.jpg', 'support/privacy.html', 'vapid.json', '../x.js', '/etc/x.js', 'a.txt'])
+    for (const bad of ['faces/arel1.png', 'faces/index.json', 'photo-1.png', 'support/privacy.html', 'vapid.json', '../x.js', '/etc/x.js', 'a.txt', 'a.jpg'])
       expect(() => checkFiles({ [bad]: 'h' })).toThrow();
-    expect(() => checkFiles({ 'index.html': 'h', 'assets/index-AB.js': 'h', 'models/cat.glb': 'h', 'icons/icon-192.png': 'h', 'sw.js': 'h' })).not.toThrow();
+    expect(() => checkFiles({ 'index.html': 'h', 'assets/index-AB.js': 'h', 'models/cat.glb': 'h', 'icons/icon-192.png': 'h', 'sw.js': 'h', 'tex/gravel.png': 'h', 'hdri/sky.hdr': 'h' })).not.toThrow();
   });
   it('copies only files listed in files.json (a stray faces/ folder in dist never ships)', () => {
     const d = mkdtempSync(join(tmpdir(), 'dist-')), o = mkdtempSync(join(tmpdir(), 'out-'));

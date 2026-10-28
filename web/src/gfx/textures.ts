@@ -34,6 +34,15 @@ export function texture(el: HTMLCanvasElement, repeat = false): THREE.CanvasText
   return t;
 }
 
+/** A CC0 photo texture from public/tex (ambientCG), tiling; loads in the background, the material shows plain colour until it arrives. */
+export function photoTexture(file: string, srgb = true): THREE.Texture {
+  const t = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}tex/${file}`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = maxAniso;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export function gravelTexture(): THREE.Texture {
   return texture(
     canvas(256, 256, (c) => {

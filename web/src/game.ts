@@ -16,6 +16,8 @@ import { MessRenderer } from './gfx/messes';
 import { Ambient } from './gfx/ambient';
 import { BlobShadow, Cameos, CAMEO_NAMES, type CameoEvent } from './gfx/cameos';
 import { PowerVisuals } from './gfx/powerups';
+import { Juice } from './gfx/juice';
+import { Birds, Steam } from './gfx/life';
 import { MagnetEffect } from './gfx/magnet';
 import { ParticlePool } from './gfx/effects';
 import { GoldenStarRenderer } from './gfx/goldStars';
@@ -152,6 +154,11 @@ export class Game {
     this.events.onCameo?.({ ...e, name: CAMEO_NAMES[e.who] });
   }, !isTablet());
   private runnerBlob = new BlobShadow(1.7);
+  private juice = new Juice();
+  private birds = new Birds();
+  private steam = new Steam();
+  private skyBirds = true; // daytime worlds only
+  private slowT = 0; // seconds of crash slow-motion left
   private reactionCam = new THREE.PerspectiveCamera(32, 1, 0.05, 20);
   private headPos = new THREE.Vector3();
   private stars = new GoldenStarRenderer();
@@ -214,7 +221,7 @@ export class Game {
     this.figure.onReady = () => { const d = characterById(this.figure.characterId); this.power.jetpack.place(d.height, d.slide === 'clip'); };
     this.figure.preloadAll();
     this.coins = new CoinRenderer(this.mats);
-    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.ambient.additive.points, this.ambient.normal.points, this.cameos.group, this.runnerBlob.mesh, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
+    this.scene.add(this.power.group, this.figure.root, this.coins.group, this.messes.group, this.stars.group, this.dust.points, this.ambient.additive.points, this.ambient.normal.points, this.cameos.group, this.birds.mesh, this.runnerBlob.mesh, this.glow.points, this.sparkles.points, this.confetti.points, this.magnet.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -235,6 +242,7 @@ export class Game {
 
   private applyTheme(t: Theme): void {
     this.theme = t;
+    this.skyBirds = t.stars < 0.3 && t.id !== 'space-station';
     this.env.apply(t);
     this.post.setTheme(t);
     this.ambient.set(t);
@@ -296,6 +304,8 @@ export class Game {
     this.acc = 0;
     this.shake = 0;
     this.crashHandled = false;
+    this.slowT = 0;
+    this.juice.reset();
     this.finishT = -1;
     this.lastScore = this.lastCoins = this.lastProgress = -1;
     this.lastStars = 0;
@@ -344,8 +354,10 @@ export class Game {
 
   frame(nowMs: number): void {
     const now = nowMs / 1000;
-    const dt = this.last === null ? 0 : Math.min(now - this.last, 0.25);
+    const raw = this.last === null ? 0 : Math.min(now - this.last, 0.25);
     this.last = now;
+    const dt = this.slowT > 0 ? raw * 0.35 : raw; // the moment of a crash plays in slow motion
+    this.slowT = Math.max(0, this.slowT - raw);
     this.time += dt;
     this.frameDt = dt;
 
@@ -376,6 +388,7 @@ export class Game {
     }
     this.dust.update(dt);
     this.ambient.update(dt, this.camera.position);
+    this.birds.update(this.time, this.camera.position, this.skyBirds);
     this.glow.update(dt);
     this.sparkles.update(dt);
     this.confetti.update(dt);
@@ -522,6 +535,7 @@ export class Game {
     this.lastMessTicks = s.messTicks;
     if (s.crashed && !this.crashHandled) {
       this.crashHandled = true;
+      this.slowT = 0.5;
       this.endMess();
       this.shake = 0.28;
       this.glow.burst(s.x, s.y + 1, -s.z - 0.5, 90, { color: 0xfff3b0, speed: 5, life: 0.7, size: 0.3, gravity: 6, colorJitter: 0.6 });
@@ -602,6 +616,8 @@ export class Game {
     this.power.update(vs, track.pickups, this.time, this.viewAhead, this.frameDt, this.glow, this.dust);
     this.cameos.update({ x: s.x, y: s.y, z: s.z, speed: speedOf(s, p.pace), flying: s.fly > 0 || s.descend > 0 }, track, this.frameDt, this.time, this.glow, s.floor);
     this.runnerBlob.set(s.x, s.floor, -s.z, s.y - s.floor);
+    this.steam.update(this.frameDt, -s.z, s.x, this.dust, SEGMENT_LENGTH);
+    this.juice.update(s, speedOf(s, p.pace), this.boost, this.frameDt, { dust: this.dust, glow: this.glow, sparkles: this.sparkles });
     const celebrating = !!p.level?.finished && this.finishT >= COAST_SECONDS;
     if (this.debugPose === 'celebrate') this.figure.celebrate(this.time % 3, this.frameDt, vs);
     else if (celebrating) this.figure.celebrate(this.finishT - COAST_SECONDS, this.frameDt, vs);
@@ -626,7 +642,7 @@ export class Game {
     const dread = this.power.chaser.dread;
     this.post.setDread(dread * (0.88 + 0.12 * Math.sin(this.time * 7)));   // a slow heartbeat in the vignette
     if (dread > 0.3) this.shake = Math.max(this.shake, 0.05 * dread);        // the ground rumbles as it closes in
-    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
+    this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov + this.juice.punch; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
     const flyingNow = s.fly > 0 || s.descend > 0;
     const camTarget = flyingNow ? s.y * 0.72 : s.floor * 0.7;
@@ -638,7 +654,7 @@ export class Game {
       sx = Math.sin(this.time * 90) * 0.22 * k;
       sy = -sx * 0.6;
     }
-    this.camera.position.set(s.x * 0.6 + sx, 4.0 + this.camY + sy, -s.z + 7.2);
+    this.camera.position.set(s.x * 0.6 + sx, 4.0 + this.camY + sy - this.juice.landKick, -s.z + 7.2);
     this.lean += ((s.x - this.camX) * -0.35 - this.lean) * Math.min(1, this.frameDt * 10);
     this.lean = Math.max(-0.05, Math.min(0.05, this.lean));
     this.camX = s.x;

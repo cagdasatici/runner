@@ -1,11 +1,13 @@
 // The themed world: sky + lights + fog + skyline backdrop (Environment), 18 m track/city segments, the finish arch.
 // World → scene mapping: scene position = (x, y, -z). Pure visuals: never reads or changes game rules.
 import * as THREE from 'three';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { SplitMix64 } from '../core/rng';
 import { laneX } from '../core/track';
 import { applyThemeToMaterials, type EnvMaterials } from './envMaterials';
 import { backdropTexture, mix, skyTexture } from './envTextures';
 import { Merger } from './merge';
+import { VENT_Z, ventAt } from './life';
 import { SkyDome } from './skyDome';
 import { BOX, box, CONE, CYL, ICO, placeProp, placeShrub, type Ctx } from './props';
 import { clearVehicleCache } from './vehicles';
@@ -13,6 +15,13 @@ import type { Theme } from './themes';
 
 export { makeObstacle } from './vehicles';
 export const SEGMENT_LENGTH = 18.0;
+
+/** Real sky lighting (Poly Haven, CC0) for the worlds that look like our own; the made-up ones (candy, space) keep their painted sky. */
+const NO_HDRI = new Set(['candy-land', 'space-station', 'crystal-dreams']);
+function hdriFor(t: Theme): string | null {
+  if (NO_HDRI.has(t.id)) return null;
+  return t.stars > 0.5 ? 'dikhololo_night' : t.sky.mid === 0xf2788a ? 'venice_sunset' : 'kloppenheim_06_puresky';
+}
 const SHADOW_BOX = 14;
 
 /** Sky, image lighting for shiny materials, sun with shadows, fog and the distant skyline. Call `apply` to (re)theme. */
@@ -29,6 +38,7 @@ export class Environment {
   private fogBase = new THREE.Color();
   private fogTint = new THREE.Color();
   private envTex: THREE.Texture | null = null;
+  private hdri = new Map<string, THREE.Texture>();
   private pmrem: THREE.PMREMGenerator;
   theme: Theme | null = null;
 
@@ -71,6 +81,8 @@ export class Environment {
     this.scene.background = null;
     this.envTex = this.pmrem.fromEquirectangular(this.skyTex).texture;
     this.scene.environment = this.envTex;
+    this.scene.environmentIntensity = 1;
+    this.useHdri(t);
     this.scene.fog = new THREE.Fog(t.fog.color, t.fog.near * 1.25 * this.fogScale, t.fog.far * 1.2 * this.fogScale);
     const tint = t.stars > 0.5 ? 0x8fa8ff : t.sky.mid === 0xf2788a ? 0xffb38a : 0xffd9a8; // night: cooler, sunset: warmer, day: golden hour
     this.dome.set(this.skyTex, tint, t.stars > 0.5 ? 0.35 : 1);
@@ -86,6 +98,26 @@ export class Environment {
     this.backdropMat.needsUpdate = true;
     applyThemeToMaterials(this.mats, t);
     clearVehicleCache();
+  }
+
+  /** Swaps the painted-sky lighting for the real HDRI once it has loaded (cached per map), if this world has one. */
+  private useHdri(t: Theme): void {
+    const key = hdriFor(t);
+    if (!key) return;
+    const show = (env: THREE.Texture) => {
+      if (this.theme !== t) return; // the world changed while it loaded
+      this.scene.environment = env;
+      this.scene.environmentIntensity = 0.75;
+    };
+    const hit = this.hdri.get(key);
+    if (hit) { show(hit); return; }
+    new RGBELoader().load(`${import.meta.env.BASE_URL}hdri/${key}.hdr`, (tex) => {
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      const env = this.pmrem.fromEquirectangular(tex).texture;
+      tex.dispose();
+      this.hdri.set(key, env);
+      show(env);
+    }, undefined, () => { /* offline and not cached: the painted sky lighting stays */ });
   }
 
   /** Keeps the sun's shadow box centred just ahead of the runner (snapped to shadow texels so edges don't shimmer). */
@@ -116,7 +148,7 @@ export function makeSegment(k: number, m: EnvMaterials, t: Theme): THREE.Group {
   const fogMix = (col: number, f: number) => mix(col, t.fog.color, f);
 
   // ---- track: ballast, sleepers, rails
-  mg.add(BOX, m.gravel, 0, -0.15, -len / 2, { scale: [8.6, 0.3, len], uvScale: [4, 8], color: 0xffffff });
+  mg.add(BOX, m.gravel, 0, -0.15, -len / 2, { scale: [8.6, 0.3, len], uvScale: [3.4, len / 2.6], color: 0xffffff });
   for (let lane = 0; lane < 3; lane++) {
     const x = laneX(lane);
     for (let z = 0.6; z < len; z += 1.2) box(c, m.vc, x, 0.05, -z, 2.3, 0.1, 0.3, 0x7b5230, { ao: 0.35, top: 0.1 });
@@ -130,8 +162,12 @@ export function makeSegment(k: number, m: EnvMaterials, t: Theme): THREE.Group {
 
   for (const side of [-1, 1]) {
     // ---- pavement, kerb stripe, and the wide verge that fills the view to the sides
-    box(c, m.vc, side * 5.0, 0.3, -len / 2, 1.4, 0.6, len, t.ground.path, { ao: 0.25, top: 0.12 });
+    mg.add(BOX, m.paving, side * 5.0, 0.3, -len / 2, { scale: [1.4, 0.6, len], color: t.ground.path, glow: 1.5, ao: 0.25, top: 0.12, uvScale: [0.9, len / 1.6] });
     box(c, m.vc, side * 4.42, 0.61, -len / 2, 0.18, 0.02, len, 0xfacc15);
+    if (ventAt(k, side as -1 | 1)) { // street grate (the steam comes from life.ts)
+      box(c, m.vc, side * 5.0, 0.62, VENT_Z, 0.9, 0.04, 0.9, 0x262a33);
+      for (let i = -1; i <= 1; i++) box(c, m.vc, side * 5.0, 0.645, VENT_Z + i * 0.26, 0.74, 0.02, 0.06, 0x555c68);
+    }
     box(c, m.vc, side * 25.7, 0.2, -len / 2, 40, 0.4, len, t.ground.side, { top: 0.1 });
 
     for (let lot = 0; lot < 2; lot++) {
@@ -162,7 +198,7 @@ export function makeSegment(k: number, m: EnvMaterials, t: Theme): THREE.Group {
   }
   if (((k % 3) + 3) % 3 === 0) gantry(c);
 
-  const ground = new Set<THREE.Material>([m.gravel, m.vc, m.facade]);
+  const ground = new Set<THREE.Material>([m.gravel, m.paving, m.vc, m.facade]);
   const g = mg.build(() => false, (mat) => ground.has(mat));
   g.position.z = -k * len;
   return g;
