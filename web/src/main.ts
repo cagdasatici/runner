@@ -104,6 +104,7 @@ function audioPower(p: { board: number; magnet: number; sneakers: number; double
 
 let lastMess: 'poop' | 'pee' = 'poop';
 const game = new Game($('gl'), {
+  onChaser: () => audio.sfx('roar'),
   onCameo: (e) => {
     if (e.type === 'bonk') { showToast(`${e.name} went flying! 🐶💫`); audio.sfx('boardbreak'); }
     else if (e.type === 'dodge') showToast(`Hopped over ${e.name}!`);
@@ -138,7 +139,7 @@ const game = new Game($('gl'), {
     $('newbest').classList.toggle('hidden', !newBest);
     $('again').textContent = current ? 'Try Again' : 'Play Again';
     $('home').textContent = current ? 'Map' : 'Menu';
-    later(350, () => show('over'));
+    later(game.chaserCaught ? 1300 : 350, () => show('over')); // the chaser gets its moment: it lunges past, turns and roars
   },
   onFinish: (run) => showResults(run),
   // Optional hook owned by audio.ts; guarded so this compiles whether or not it exists yet.

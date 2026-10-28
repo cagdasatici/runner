@@ -48,6 +48,8 @@ export interface GameEvents {
   onBoost?(on: boolean): void;
   /** A dog cameo appeared, got bonked into the sky, or was hopped over (Bella and Toby pop up when neither is the player). */
   onCameo?(e: CameoEvent & { name: string }): void;
+  /** The chaser shows up ('appear') or catches the runner ('caught'). */
+  onChaser?(e: 'appear' | 'caught'): void;
   onStreak?: (n: number) => void;
   onCoinFly?(px: number, py: number): void; // screen position (CSS px) of a coin just collected
   onFinish(run: LevelRun): void;
@@ -100,7 +102,7 @@ function levelPlay(n: number, opts: StartOptions): Play {
 }
 
 /** Copy of the state with a forced pose (debug screenshots only). */
-function forcePose(s: RunnerState, pose: string): RunnerState {
+function forcePose(s: RunnerState, pose: string, time = 0): RunnerState {
   const v = { ...s };
   switch (pose) {
     case 'slide': v.slideTicks = 72 - Math.floor((performance.now() / 8.33) % 72); break; // repeating roll
@@ -111,6 +113,7 @@ function forcePose(s: RunnerState, pose: string): RunnerState {
     case 'stumble': v.stumbles += 1; break;
     case 'chaser': v.chaser = 240; break;
     case 'chaser-close': v.chaser = 240; v.slow = 30; break;
+    case 'caught': v.chaser = 240; v.crashed = time > 5; break; // chased for 5 s, then caught (visual only)
   }
   return v;
 }
@@ -189,6 +192,7 @@ export class Game {
   private frames = 0;
 
   constructor(canvas: HTMLCanvasElement, private events: GameEvents, forced?: Quality) {
+    this.power.chaser.onEvent = (e) => { this.shake = Math.max(this.shake, e === 'caught' ? 0.28 : 0.2); this.events.onChaser?.(e); };
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.info.autoReset = false; // post passes add up: reset once per frame
     if (forced) { this.quality = forced; this.qualityLocked = true; }
@@ -251,6 +255,9 @@ export class Game {
 
   /** Debug/test only (?pose=slide|jump|crash|fly|board|stumble): forces the runner's pose while playing. */
   debugPose: string | null = null;
+
+  /** True once the runner has crashed into the chaser (the game-over screen waits for its roar). */
+  get chaserCaught(): boolean { const s = this.play?.state; return !!s && s.crashed && s.chaser > 0; }
 
   get character(): string { return this.figure.characterId; }
   setCharacter(id: string): void { this.figure.setCharacter(id); }
@@ -590,9 +597,9 @@ export class Game {
     } : undefined);
     if (p.level) this.stars.update(p.level.starsTaken, this.time, this.frameDt);
 
-    const vs = this.debugPose ? forcePose(s, this.debugPose) : s;
+    const vs = this.debugPose ? forcePose(s, this.debugPose, this.time) : s;
     this.messes.update(track.messes.filter((m) => !s.collected.has(m.id) && m.z < s.z + this.viewAhead && m.z > s.z - 5), this.time);
-    this.power.update(vs, track.pickups, this.time, this.viewAhead, this.frameDt, this.glow);
+    this.power.update(vs, track.pickups, this.time, this.viewAhead, this.frameDt, this.glow, this.dust);
     this.cameos.update({ x: s.x, y: s.y, z: s.z, speed: speedOf(s, p.pace), flying: s.fly > 0 || s.descend > 0 }, track, this.frameDt, this.time, this.glow, s.floor);
     this.runnerBlob.set(s.x, s.floor, -s.z, s.y - s.floor);
     const celebrating = !!p.level?.finished && this.finishT >= COAST_SECONDS;
@@ -616,6 +623,9 @@ export class Game {
     this.events.onSpeed?.(speedOf(s, p.pace));
     this.boostFov += ((this.boost ? 1 : 0) - this.boostFov) * Math.min(1, this.frameDt * 8);
     this.post.setRush(this.boostFov * (this.tablet ? 0.7 : 1));
+    const dread = this.power.chaser.dread;
+    this.post.setDread(dread * (0.88 + 0.12 * Math.sin(this.time * 7)));   // a slow heartbeat in the vignette
+    if (dread > 0.3) this.shake = Math.max(this.shake, 0.05 * dread);        // the ground rumbles as it closes in
     this.camera.fov = 66 + (speedOf(s, p.pace) - Runner.startSpeed) + (s.fly > 0 ? 16 : 12) * this.boostFov; // 66° → 76° as it speeds up, +12° boosted
     this.camera.updateProjectionMatrix();
     const flyingNow = s.fly > 0 || s.descend > 0;

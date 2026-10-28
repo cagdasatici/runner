@@ -1,10 +1,11 @@
-// Visuals for power-ups: floating pickups, the board under the feet, the magnet ring, the jetpack and the chaser.
+// Visuals for power-ups: floating pickups, the board under the feet, the magnet ring, the jetpack, and the hook for the chaser (drawn in chaser.ts).
 // Pure drawing; the rules live in core/runner.ts. Shared geometry and materials, so nothing here needs disposing per pickup.
 import * as THREE from 'three';
 import { laneX, type Pickup, type PickupKind } from '../core/track';
 import type { RunnerState } from '../core/runner';
 import type { ParticlePool } from './effects';
 import { dotTexture } from './textures';
+import { ChaserBlob } from './chaser';
 
 const lambert = (color: number, emissive = 0x000000) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: 0.5, metalness: 0.3, roughness: 0.35 });
 const glyph = (text: string, bg: string): THREE.CanvasTexture => {
@@ -74,7 +75,7 @@ export class PowerVisuals {
   /** Attach `jetpack.group` to the runner's pivot (see Game). */
   readonly jetpack = new JetpackVisual();
   private nodes = new Map<number, THREE.Group>();
-  private chaser = new ChaserBlob();
+  readonly chaser = new ChaserBlob();
   private lastBreaks = 0;
 
   constructor() {
@@ -82,7 +83,7 @@ export class PowerVisuals {
   }
 
   /** Keeps the pickups in the scene in step with the track, and poses the extras around the runner. */
-  update(s: RunnerState, pickups: Pickup[], time: number, viewAhead: number, dt = 0, glow?: ParticlePool): void {
+  update(s: RunnerState, pickups: Pickup[], time: number, viewAhead: number, dt = 0, glow?: ParticlePool, smoke?: ParticlePool): void {
     const live = new Set<number>();
     for (const p of pickups) {
       if (s.collected.has(p.id) || p.z > s.z + viewAhead || p.z < s.z - 5) continue;
@@ -109,14 +110,16 @@ export class PowerVisuals {
     }
     // the magnet's look (field ripples, pulled coins) lives in gfx/magnet.ts, driven from game.ts
     // the chaser runs 3 m behind and drops back as the timer runs out
+    // (a crash while it is active means it caught the runner)
     const behind = 3 + (1 - Math.min(1, s.chaser / 240)) * 9;
-    this.chaser.update(s.chaser > 0 && !s.crashed, dt, s.x, -s.z, behind, s.slow > 0);
+    this.chaser.update(s.chaser > 0 && !s.crashed, dt, s.x, -s.z, behind, s.slow > 0, { glow, smoke, caught: s.crashed && s.chaser > 0, floorY: s.floor });
   }
 
   clear(): void {
     for (const n of this.nodes.values()) this.group.remove(n);
     this.nodes.clear();
     this.board.reset();
+    this.chaser.reset();
     this.lastBreaks = 0;
   }
 }
@@ -427,137 +430,5 @@ export class JetpackVisual {
           { color: Math.random() < 0.5 ? 0xfb923c : 0xfde047, speed: 1.5, life: 0.4, size: 0.2, dir: [0, -1, 0.4], spread: 0.3 });
       }
     }
-  }
-}
-
-/**
- * The chaser: a shadow-smoke wraith. Hooded void with ember eyes, a tapering cloak, ragged tendrils streaming behind it,
- * a violet aura and a handful of rising embers. One group, shared geometry/materials, preallocated ember buffer.
- * Faces -z (towards the runner). Closer than ~5 m it lunges (leans in, eyes flare); a stumble makes it rear up.
- */
-export class ChaserBlob {
-  readonly group = new THREE.Group();
-  private wraith = new THREE.Group();
-  private tendrils: THREE.Mesh[] = [];
-  private eyes: THREE.Mesh[] = [];
-  private aura: THREE.Sprite;
-  private embers: THREE.Points;
-  private emberData: Float32Array;
-  private emberAge: Float32Array;
-  private eyeMat = new THREE.MeshBasicMaterial({ color: 0xff6a1a, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-  private t = 0;
-  private lunge = 0;
-  private lastGap = 12;
-
-  constructor() {
-    const cloakMat = new THREE.MeshStandardMaterial({ color: 0x07030f, emissive: 0x1e0a40, emissiveIntensity: 0.55, roughness: 1, metalness: 0, side: THREE.DoubleSide });
-    const smokeMat = new THREE.MeshBasicMaterial({ color: 0x4c1d95, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
-    // cloak: a flared lathe silhouette
-    const prof = [[0, 0], [0.7, 0.05], [0.62, 0.45], [0.44, 0.95], [0.3, 1.35], [0.2, 1.62], [0, 1.7]].map(([x, y]) => new THREE.Vector2(x, y));
-    const cloak = new THREE.Mesh(new THREE.LatheGeometry(prof, 14), cloakMat);
-    cloak.position.y = 0.2;
-    // hood: hunched sphere with a hollow void face
-    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), cloakMat);
-    hood.scale.set(1, 1.05, 1.15);
-    hood.position.set(0, 1.85, 0.02);
-    const brow = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.5, 10), cloakMat);
-    brow.position.set(0, 2.28, 0.05);
-    brow.rotation.x = -0.35;
-    const voidFace = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), new THREE.MeshBasicMaterial({ color: 0x020005 }));
-    voidFace.scale.set(0.95, 1, 0.5);
-    voidFace.position.set(0, 1.84, -0.34);
-    this.wraith.add(cloak, hood, brow, voidFace);
-    // glowing ember rifts down the back of the cloak (seen when it trails the runner)
-    const rift = new THREE.MeshBasicMaterial({ color: 0xff5a14, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
-    for (const [x, y, r, h] of [[0, 0.95, 0, 0.8], [-0.22, 0.75, 0.25, 0.5], [0.24, 0.8, -0.3, 0.55]]) {
-      const c = new THREE.Mesh(new THREE.PlaneGeometry(0.05, h), rift);
-      c.position.set(x, y, 0.5 - y * 0.18);
-      c.rotation.set(0.28, 0, r);
-      this.wraith.add(c);
-    }
-    // slanted ember eyes
-    const eyeGeo = new THREE.CircleGeometry(0.11, 12);
-    for (const x of [-1, 1]) {
-      const e = new THREE.Mesh(eyeGeo, this.eyeMat);
-      e.scale.set(1.5, 0.55, 1);
-      e.position.set(x * 0.15, 1.88, -0.5);
-      e.rotation.z = -x * 0.45;
-      e.rotation.y = Math.PI;
-      this.eyes.push(e);
-      this.wraith.add(e);
-    }
-    // arms: two long claws reaching forward
-    const claw = new THREE.ConeGeometry(0.09, 0.9, 6);
-    for (const x of [-1, 1]) {
-      const c = new THREE.Mesh(claw, cloakMat);
-      c.position.set(x * 0.5, 1.2, -0.45);
-      c.rotation.set(-1.25, 0, x * 0.25);
-      this.wraith.add(c);
-    }
-    // ragged smoke tendrils streaming back (+z)
-    const tGeo = new THREE.ConeGeometry(0.1, 1.1, 5, 1, true);
-    tGeo.translate(0, -0.55, 0);
-    for (let i = 0; i < 7; i++) {
-      const m = new THREE.Mesh(tGeo, i % 2 ? smokeMat : cloakMat);
-      const a = (i / 7) * Math.PI * 2;
-      m.position.set(Math.cos(a) * 0.5, 0.45 + (i % 3) * 0.12, 0.2 + Math.sin(a) * 0.3);
-      m.userData.phase = i * 1.7;
-      m.userData.base = 0.35 + (i % 3) * 0.12;
-      this.tendrils.push(m);
-      this.wraith.add(m);
-    }
-    // aura glow
-    this.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTexture(), color: 0x8b5cf6, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true }));
-    this.aura.scale.set(3.4, 3.4, 1);
-    this.aura.position.set(0, 1.3, 0.2);
-    // embers
-    const N = 14;
-    this.emberData = new Float32Array(N * 3);
-    this.emberAge = new Float32Array(N);
-    for (let i = 0; i < N; i++) this.emberAge[i] = i / N;
-    const eg = new THREE.BufferGeometry();
-    eg.setAttribute('position', new THREE.BufferAttribute(this.emberData, 3));
-    this.embers = new THREE.Points(eg, new THREE.PointsMaterial({ color: 0xff8a3d, size: 0.14, map: dotTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-    this.embers.frustumCulled = false;
-    this.wraith.traverse((o) => { o.castShadow = false; });
-    this.group.add(this.wraith, this.aura, this.embers);
-    this.group.visible = false;
-  }
-
-  /** `gap` = metres behind the runner (+z); `stumbled` = the runner is in the stumble slow-down. */
-  update(on: boolean, dt: number, x: number, z: number, gap: number, stumbled = false): void {
-    this.group.visible = on;
-    if (!on) return;
-    this.t += dt;
-    const t = this.t;
-    // lunge builds as the gap closes below 5 m; a stumble snaps it forward
-    const want = Math.min(1, Math.max(0, (6 - gap) / 3)) + (stumbled ? 0.4 : 0);
-    this.lunge += (want - this.lunge) * Math.min(1, dt * 6);
-    this.lastGap = gap;
-    const L = this.lunge;
-    const bob = Math.sin(t * 3.2) * 0.18;
-    this.group.position.set(x + Math.sin(t * 1.7) * 0.15, 0.35 + bob + Math.max(0, Math.sin(t * 7)) * 0.05, z + gap - L * 0.8);
-    this.wraith.rotation.x = -L * 0.5;            // lean toward the runner
-    this.wraith.rotation.z = Math.sin(t * 2.1) * 0.06;
-    this.wraith.scale.set(1 - L * 0.08, 1 + L * 0.1, 1 + L * 0.25);
-    const flare = 1 + L * 0.9 + (Math.sin(t * 13) > 0.92 ? 0.5 : 0);
-    this.eyeMat.opacity = Math.min(1, 0.75 + L * 0.5);
-    for (const e of this.eyes) e.scale.set(1.5 * flare, 0.55 * (1 + L * 0.4), 1);
-    this.aura.scale.setScalar(3.2 + Math.sin(t * 4) * 0.25 + L * 1.2);
-    for (const m of this.tendrils) {
-      const ph = m.userData.phase as number, base = m.userData.base as number;
-      m.rotation.x = -(base + Math.sin(t * 4 + ph) * 0.2 + L * 0.5); // streams backward, flutters
-      m.rotation.z = Math.sin(t * 3 + ph * 1.3) * 0.3;
-    }
-    // embers rise and drift back from the cloak
-    const d = this.emberData, a = this.emberAge;
-    for (let i = 0; i < a.length; i++) {
-      a[i] += dt * 0.7;
-      if (a[i] >= 1) { a[i] -= 1; d[i * 3] = (Math.sin(i * 12.9 + t) ) * 0.5; d[i * 3 + 1] = 0.6 + (i % 4) * 0.2; d[i * 3 + 2] = 0.2; }
-      d[i * 3] += Math.sin(t * 3 + i) * dt * 0.3;
-      d[i * 3 + 1] += dt * 1.1;
-      d[i * 3 + 2] += dt * 1.8;
-    }
-    this.embers.geometry.attributes.position.needsUpdate = true;
   }
 }

@@ -32,7 +32,7 @@ export interface FaceHandle { upgrade(): Promise<void> }
 const mat = (color: number, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
 
 /** A tube along `pts` whose radius shrinks from r0 to r1: one strand/lock of hair. */
-function lock(pts: THREE.Vector3[], r0: number, r1: number, m: THREE.Material): THREE.Mesh {
+export function lock(pts: THREE.Vector3[], r0: number, r1: number, m: THREE.Material): THREE.Mesh {
   const curve = new THREE.CatmullRomCurve3(pts);
   const N = 28, R = 8;
   const g = new THREE.TubeGeometry(curve, N, 1, R, false);

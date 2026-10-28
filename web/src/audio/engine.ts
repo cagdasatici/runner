@@ -21,7 +21,7 @@ interface Session { gain: GainNode; pump: GainNode; layers: Bus[]; tonal: Bus[];
 const DRUMS = new Set(['kick', 'snare', 'clap', 'hat', 'ohat', 'tom', 'shaker', 'crash']);
 export const PUMP_DEPTH = 0.45; // tonal layers dip to 55 % on each kick
 
-const STINGERS = new Set(['star', 'powerup', 'boardbreak', 'combo', 'win']);
+const STINGERS = new Set(['star', 'powerup', 'boardbreak', 'combo', 'win', 'roar']);
 
 export class MusicEngine {
   readonly ctx: BaseAudioContext;
@@ -759,6 +759,13 @@ export class MusicEngine {
         break;
       case 'win': this.win(this.nextBeat()); break;
       case 'crash': this.crash(t); break;
+      case 'roar': { // the chaser: a growl that drops, a rasp, then two heartbeats
+        this.noiseHit({ t, dur: 0.9, type: 'lowpass', f: 900, f2: 160, q: 0.8, peak: 0.26, att: 0.08, bus: b, wet: 0.35, prio: 4 });
+        this.blip({ t, f: 95, f2: 48, type: 'sawtooth', dur: 0.95, att: 0.06, peak: 0.2, lp: 520, detune: 18, bus: b, wet: 0.3, prio: 4 });
+        this.blip({ t, f: 142, f2: 70, type: 'square', dur: 0.8, att: 0.05, peak: 0.07, lp: 700, bus: b, prio: 4 });
+        for (const d of [0.95, 1.2]) this.blip({ t: t + d, f: 62, f2: 40, type: 'sine', dur: 0.14, peak: 0.3, bus: b, prio: 4 });
+        break;
+      }
     }
   }
 

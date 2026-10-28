@@ -25,7 +25,7 @@ void main() {
 }`;
 
 const COMPOSITE = `
-uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform float rush; uniform vec2 texel;
+uniform sampler2D scene; uniform sampler2D bloom; uniform float strength; uniform vec3 tint; uniform float sat; uniform float contrast; uniform float hd; uniform float rush; uniform float dread; uniform vec2 texel;
 varying vec2 vUv;
 void main() {
   vec3 base = texture2D(scene, vUv).rgb;
@@ -42,6 +42,11 @@ void main() {
   c = (c - 0.5) * contrast + 0.5;
   vec2 d = vUv - 0.5;
   c *= 1.0 - 0.32 * dot(d, d) * 2.0;
+  if (dread > 0.01) { // the chaser is close: edges darken and turn violet, colour drains a little
+    float dv = smoothstep(0.2, 0.85, length(d) * 1.3);
+    c = mix(c, c * vec3(0.5, 0.28, 0.7), dv * dread);
+    c = mix(c, vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), 0.25 * dread);
+  }
   if (hd > 0.5) {
     vec3 blurN = (texture2D(scene, vUv + vec2(texel.x, 0.0)).rgb + texture2D(scene, vUv - vec2(texel.x, 0.0)).rgb
                + texture2D(scene, vUv + vec2(0.0, texel.y)).rgb + texture2D(scene, vUv - vec2(0.0, texel.y)).rgb) * 0.25;
@@ -76,7 +81,7 @@ export class PostFx {
     this.blur = mk(BLUR, { src: { value: null }, dir: { value: new THREE.Vector2() } });
     this.comp = mk(COMPOSITE, {
       scene: { value: null }, bloom: { value: null }, strength: { value: 0.3 }, tint: { value: new THREE.Vector3(1, 1, 1) },
-      sat: { value: 1 }, contrast: { value: 1 }, hd: { value: 1 }, rush: { value: 0 }, texel: { value: new THREE.Vector2() },
+      sat: { value: 1 }, contrast: { value: 1 }, hd: { value: 1 }, rush: { value: 0 }, dread: { value: 0 }, texel: { value: new THREE.Vector2() },
     });
     this.quad = new THREE.Mesh(tri, this.bright);
     this.quad.frustumCulled = false;
@@ -106,6 +111,8 @@ export class PostFx {
 
   /** 0…1 boost speed blur (eased by the game). */
   setRush(v: number): void { this.comp.uniforms.rush.value = v; }
+  /** 0…1 the chaser is close: vignette darkens and goes violet. */
+  setDread(v: number): void { this.comp.uniforms.dread.value = v; }
 
   private pass(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null): void {
     this.quad.material = mat;
