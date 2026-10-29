@@ -3,7 +3,7 @@
 // Started at login by launchd (see Task W8). Files are read from disk on every request, so a new
 // deploy is live immediately without a restart.
 import { createServer } from 'node:https';
-import { readFileSync, createReadStream, statSync, mkdirSync, writeFileSync, renameSync, chmodSync } from 'node:fs';
+import { readFileSync, createReadStream, statSync, mkdirSync, writeFileSync, renameSync, chmodSync, appendFileSync } from 'node:fs';
 import { generateKeyPairSync } from 'node:crypto';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
@@ -78,6 +78,29 @@ function readJson(req, res) {
   });
 }
 
+// --- speed-test reports from the iPads: appended to $SITE/perf (outside the served folder) ---
+// reports.txt is the readable log (one table per run); reports.jsonl keeps the raw numbers.
+const PERF_DIR = resolve(root, '..', 'perf');
+const str = (v, max) => typeof v === 'string' && v.length <= max;
+const num = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 1e6;
+const PERF_NUMS = ['fps', 'slowPct', 'worstMs', 'cpuMs', 'draws'];
+/** Returns a clean copy of a speed-test report, or null when anything is missing or the wrong type. */
+function cleanPerf(j) {
+  if (!j || !Array.isArray(j.results) || j.results.length < 1 || j.results.length > 8) return null;
+  if (![j.device, j.verdict, j.ipad, j.version].every((v) => str(v, 300))) return null;
+  const results = [];
+  for (const r of j.results) {
+    if (!r || !str(r.name, 40) || !PERF_NUMS.every((k) => num(r[k]))) return null;
+    results.push(Object.fromEntries([['name', r.name], ...PERF_NUMS.map((k) => [k, r[k]])]));
+  }
+  return { receivedAt: new Date().toISOString(), ipad: j.ipad, version: j.version, device: j.device, verdict: j.verdict, results };
+}
+function perfText(p) {
+  const pad = (v, n) => String(v).padStart(n);
+  const rows = p.results.map((r) => `${r.name.padEnd(10)} ${pad(r.fps, 4)} ${pad(r.slowPct + '%', 5)} ${pad(r.worstMs + ' ms', 8)} ${pad(r.cpuMs + ' ms', 8)} ${pad(r.draws, 6)}`);
+  return [`=== ${p.receivedAt}  ${p.ipad}  v${p.version}`, p.device, `${'Setup'.padEnd(10)} ${pad('fps', 4)} ${pad('slow', 5)} ${pad('worst', 8)} ${pad('cpu', 8)} ${pad('draws', 6)}`, ...rows, `Verdict: ${p.verdict}`, '', ''].join('\n');
+}
+
 async function handleApi(req, res, pathname, done) {
   const send = (status, body) => {
     const headers = { 'Cache-Control': 'no-store' };
@@ -107,6 +130,17 @@ async function handleApi(req, res, pathname, done) {
     else list.push(entry);
     writeSubs(list);
     console.log(`push subscribe ${json.who} ${host}`);
+    return send(204);
+  }
+  if (req.method === 'POST' && pathname === '/api/perf') {
+    const { tooBig, json } = await readJson(req, res);
+    if (tooBig) { res.writeHead(413, { 'Cache-Control': 'no-store', Connection: 'close' }).end(); return done(413); }
+    const p = cleanPerf(json);
+    if (!p) return send(400);
+    mkdirSync(PERF_DIR, { recursive: true });
+    appendFileSync(join(PERF_DIR, 'reports.jsonl'), JSON.stringify(p) + '\n');
+    appendFileSync(join(PERF_DIR, 'reports.txt'), perfText(p));
+    console.log(`perf report ${p.ipad}`);
     return send(204);
   }
   res.writeHead(405, { Allow: 'GET, HEAD, POST', 'Cache-Control': 'no-store' }).end();

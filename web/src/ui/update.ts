@@ -37,8 +37,15 @@ async function fetchHome(): Promise<Remote | null> {
 export interface ApplyDeps {
   caches: Pick<CacheStorage, 'keys' | 'delete'>;
   sw?: Pick<ServiceWorkerContainer, 'getRegistration'>;
-  location: Pick<Location, 'replace'>;
+  location: Pick<Location, 'replace'> & { search?: string };
 }
+
+/** The reload address after an update: keeps the page's own flags (e.g. ?perf=1) and sets v to the new build. */
+export const reloadUrl = (remote: string, search = ''): string => {
+  const q = new URLSearchParams(search);
+  q.set('v', remote);
+  return './?' + q.toString();
+};
 
 let applying = false; // re-entry guard: the watcher, the button and show() can all ask at once
 
@@ -53,12 +60,12 @@ export async function applyUpdate(remote: string, deps: ApplyDeps = { caches, sw
   try {
     if (cdnManifest && cdnManifest.version === remote) {
       await applyDelta(cdnManifest, { caches, fetch: (u, i) => fetch(u, i), base: UPDATES_URL, scope: new URL('./', location.href).href });
-      deps.location.replace('./?v=' + remote);
+      deps.location.replace(reloadUrl(remote, deps.location.search));
       return;
     }
     try { await (await deps.sw?.getRegistration())?.update(); } catch { /* offline or no worker: carry on */ }
     for (const k of await deps.caches.keys()) await deps.caches.delete(k);
-    deps.location.replace('./?v=' + remote);
+    deps.location.replace(reloadUrl(remote, deps.location.search));
   } catch {
     overlay?.classList.add('hidden'); // failed: let the kids keep playing, a later check retries
     applying = false;

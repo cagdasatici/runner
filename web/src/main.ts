@@ -1,6 +1,6 @@
 // Entry point: wires the DOM screens, input, audio and the game loop together.
 // URL flags (mirroring the iOS launch arguments): ?autoplay=1  ?idle=1  ?seed=N  ?level=N (start journey level N, 1…120)
-// Testing only: ?skip=S fast-forwards S seconds of play at start; ?debug=1 shows fps + draw calls.
+// Testing only: ?skip=S fast-forwards S seconds of play at start; ?debug=1 / ?perf=1 shows the FPS meter (also in the app: long-press the version label).
 import './style.css';
 import { Audio } from './audio';
 import { LEVEL_COUNT, levelSpec, type LevelRun } from './core/level';
@@ -13,6 +13,7 @@ import { tierFor } from './ui/tiers';
 import { loadPhotos, playPhotoWave } from './ui/photoWave';
 import { buildMap, refreshMap, scrollToLevel, STAR_SVG } from './ui/map';
 import { disable as pushDisable, enable as pushEnable, isOn as pushIsOn, pushSupported, resubscribe, type Who } from './ui/push';
+import { FrameStats, ipadName, PERF_SETUPS, sendReport, SLOW_MS, verdict, WARMUP_MS, MEASURE_MS, type PerfResult } from './ui/perfTest';
 import { applyUpdate, fetchRemote, isNewer, startUpdateWatcher } from './ui/update';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -130,6 +131,7 @@ const game = new Game($('gl'), {
     $('progress-me').style.left = `${f * 100}%`;
   },
   onCrash: (score, coins) => {
+    if (perfRun) { later(300, () => playEndless(1n, true)); return; } // speed test: keep running, no score
     const newBest = current ? false : store.record(score); // journey levels have no high score
     audio.sfx('crash'); // also fades the music out
     navigator.vibrate?.(60);
@@ -282,12 +284,12 @@ function resetHud(level: boolean): void {
   $('landing').classList.add('hidden');
 }
 
-function playEndless(): void {
+function playEndless(seed = newSeed(), auto = autoplay): void {
   cancelTimers();
   current = 0;
   kidPhotos = null;
   resetHud(false);
-  game.startRun(newSeed(), autoplay, idle, autoplay ? skip : 0, runOptions());
+  game.startRun(seed, auto, idle, auto ? skip : 0, runOptions());
   show('hud');
   audio.playMusic({ mode: 'endless' });
 }
@@ -506,29 +508,130 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) game.resetClock();
 });
 
-// --- debug overlay (?debug=1): fps and draw calls ---
+// --- FPS meter and speed test (long-press the version label on the menu; ?debug=1 / ?perf=1 also show the meter) ---
+const FPS_KEY = 'runner-fps', PERF_KEY = 'runner-perf-last';
+const readLs = (k: string): string | null => { try { return localStorage.getItem(k); } catch { return null; } };
+const writeLs = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* private mode: not kept */ } };
 let debugEl: HTMLDivElement | null = null;
+let deviceLine = '';
+function deviceInfo(): string {
+  if (deviceLine) return deviceLine;
+  const gl = game.renderer.getContext();
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+  return (deviceLine = `${window.screen.width}x${window.screen.height} @${window.devicePixelRatio}x · ${gpu} · v${__APP_LABEL__}`);
+}
+function setFpsMeter(on: boolean): void {
+  if (on && !debugEl) {
+    debugEl = document.createElement('div');
+    debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000c;padding:4px 8px;z-index:60;white-space:pre;pointer-events:none';
+    debugEl.textContent = 'measuring…';
+    document.body.appendChild(debugEl);
+  } else if (!on && debugEl) { debugEl.remove(); debugEl = null; }
+  $('perf-fps').textContent = `FPS meter: ${on ? 'ON' : 'OFF'}`;
+}
+setFpsMeter(params.get('debug') === '1' || params.get('perf') === '1' || readLs(FPS_KEY) === '1');
 if (params.get('debug') === '1' || params.get('perf') === '1') {
-  debugEl = document.createElement('div');
-  debugEl.style.cssText = 'position:fixed;left:8px;bottom:8px;color:#0f0;font:14px monospace;background:#000a;padding:4px 8px;z-index:9';
-  document.body.appendChild(debugEl);
   (window as unknown as { runnerDebug: () => unknown }).runnerDebug = () => ({ ...game.debugState(), cameos: game.cameoCount, draws: game.drawCalls(), tris: game.triangles(), quality: game.quality, screen, version: __APP_VERSION__, unlocked: progress.unlocked, totalStars: progress.totalStars });
 }
+
+// The speed test: the autopilot plays seed 1 in each PERF_SETUP for WARMUP_MS + MEASURE_MS. Leaving the run (✕) stops it.
+let perfRun: { i: number; start: number; stats: FrameStats; results: PerfResult[] } | null = null;
+let perfTag: HTMLDivElement | null = null;
+function startPerfSetup(i: number): void {
+  if (!perfRun) return;
+  const s = PERF_SETUPS[i];
+  perfRun.i = i;
+  perfRun.start = performance.now();
+  perfRun.stats = new FrameStats();
+  game.lockSetup(s.quality, s.dpr);
+  playEndless(1n, true);
+}
+function startPerfTest(): void {
+  $('perf-sheet').classList.add('hidden');
+  audio.unlock();
+  perfTag ??= Object.assign(document.createElement('div'), { id: 'perf-tag' });
+  document.body.appendChild(perfTag);
+  perfRun = { i: 0, start: 0, stats: new FrameStats(), results: [] };
+  startPerfSetup(0);
+}
+function endPerfTest(): void {
+  if (!perfRun) return;
+  const results = perfRun.results;
+  perfRun = null;
+  perfTag?.remove();
+  game.autoSetup();
+  goMenu();
+  if (!results.length) return openPerfSheet();
+  const entry = { results, device: deviceInfo(), at: new Date().toLocaleString(), sent: 'Sending to the Mac…' };
+  writeLs(PERF_KEY, JSON.stringify(entry));
+  openPerfSheet();
+  const report = { ipad: ipadName(window.screen.width, window.screen.height), version: __APP_LABEL__, device: entry.device, verdict: verdict(results), results };
+  void sendReport(report, import.meta.env.BASE_URL).then((ok) => {
+    entry.sent = ok ? 'Sent to the Mac ✓' : 'Not sent: the Mac was not reachable';
+    writeLs(PERF_KEY, JSON.stringify(entry));
+    if (!$('perf-sheet').classList.contains('hidden')) openPerfSheet();
+  });
+}
+/** Called every frame while the test runs: moves to the next setup when this one has been measured long enough. */
+function perfTick(now: number, ft: number, cpu: number): void {
+  if (!perfRun) return;
+  if (screen !== 'hud' && screen !== 'over') return endPerfTest(); // ✕ pressed: keep what was measured
+  const t = now - perfRun.start;
+  const s = PERF_SETUPS[perfRun.i];
+  if (t >= WARMUP_MS) perfRun.stats.add(ft, cpu, game.drawCalls());
+  if (perfTag) perfTag.textContent = `Speed test ${perfRun.i + 1}/${PERF_SETUPS.length} · ${s.name} · ${t < WARMUP_MS ? 'warming up' : Math.ceil((WARMUP_MS + MEASURE_MS - t) / 1000) + ' s'}`;
+  if (t < WARMUP_MS + MEASURE_MS) return;
+  perfRun.results.push(perfRun.stats.result(s.name));
+  if (perfRun.i + 1 < PERF_SETUPS.length) startPerfSetup(perfRun.i + 1);
+  else endPerfTest();
+}
+function openPerfSheet(): void {
+  const box = $('perf-results');
+  const last = readLs(PERF_KEY);
+  box.innerHTML = '';
+  if (last) {
+    try {
+      const { results, device, at, sent } = JSON.parse(last) as { results: PerfResult[]; device: string; at: string; sent?: string };
+      const row = (cells: (string | number)[], tag = 'td') => `<tr>${cells.map((c) => `<${tag}>${c}</${tag}>`).join('')}</tr>`;
+      box.innerHTML = `<table>${row(['Setup', 'fps', 'slow', 'worst', 'cpu', 'draws'], 'th')}${results.map((r) => row([r.name, r.fps, `${r.slowPct}%`, `${r.worstMs} ms`, `${r.cpuMs} ms`, r.draws])).join('')}</table>`
+        + `<p class="verdict">${verdict(results)}</p><p class="meta">${device}<br>${at}${sent ? ' · ' + sent : ''}</p>`;
+    } catch { /* old or broken entry: show nothing */ }
+  }
+  $('perf-sheet').classList.remove('hidden');
+}
+let pressTimer = 0;
+$('version').addEventListener('pointerdown', () => { pressTimer = window.setTimeout(openPerfSheet, 1500); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach((e) => $('version').addEventListener(e, () => window.clearTimeout(pressTimer)));
+$('perf-run').addEventListener('click', startPerfTest);
+$('perf-close').addEventListener('click', () => $('perf-sheet').classList.add('hidden'));
+$('perf-fps').addEventListener('click', () => { const on = !debugEl; writeLs(FPS_KEY, on ? '1' : '0'); setFpsMeter(on); });
+
 let fpsFrames = 0, fpsStart = performance.now(), lastFrameAt = 0, worstFrame = 0, worstAt = 0;
+let winSlow = 0, winCpu = 0, winCpuMax = 0;
 
 function loop(now: number): void {
+  const t0 = performance.now();
   if (screen === 'map') game.resetClock(); // the map covers the screen: skip 3D work
   else game.frame(now);
+  const cpu = performance.now() - t0; // JS time only: WebGL hands the drawing to the GPU and returns
+  const ft = lastFrameAt ? now - lastFrameAt : 0;
+  lastFrameAt = now;
+  perfTick(now, ft, cpu);
   if (debugEl) {
     fpsFrames++;
-    if (lastFrameAt) {
-      const ft = now - lastFrameAt;
-      if (ft > worstFrame || now - worstAt > 5000) { worstFrame = ft; worstAt = now; } // worst frame of the last ~5 s
-    }
-    lastFrameAt = now;
+    winCpu += cpu;
+    winCpuMax = Math.max(winCpuMax, cpu);
+    if (ft > worstFrame || now - worstAt > 5000) { worstFrame = ft; worstAt = now; } // worst frame of the last ~5 s
+    if (ft > SLOW_MS) winSlow++;
     if (now - fpsStart >= 1000) {
-      debugEl.textContent = `${fpsFrames} fps · worst ${Math.round(worstFrame)} ms · ${game.drawCalls()} draws · ${Math.round(game.triangles() / 1000)}k tris · ${game.renderer.getPixelRatio()}x · ${game.quality}${document.body.classList.contains('boosting') ? ' · BOOST' : ''}`;
-      fpsFrames = 0;
+      debugEl.textContent = [
+        `${fpsFrames} fps · avg ${((now - fpsStart) / fpsFrames).toFixed(1)} ms · worst ${Math.round(worstFrame)} ms · slow ${Math.round((100 * winSlow) / fpsFrames)}%`,
+        `cpu ${(winCpu / fpsFrames).toFixed(1)} ms (max ${winCpuMax.toFixed(1)}) · ${game.drawCalls()} draws · ${Math.round(game.triangles() / 1000)}k tris`,
+        `${game.renderer.getPixelRatio()}x · ${game.quality}${document.body.classList.contains('boosting') ? ' · BOOST' : ''}`,
+        deviceInfo(),
+      ].join('\n');
+      fpsFrames = 0; winSlow = 0; winCpu = 0; winCpuMax = 0;
       fpsStart = now;
     }
   }

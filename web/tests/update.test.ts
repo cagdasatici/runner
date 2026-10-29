@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { applyUpdate, isNewer, resetApplyGuard } from '../src/ui/update';
+import { applyUpdate, isNewer, reloadUrl, resetApplyGuard } from '../src/ui/update';
 
 const fakes = (reject = false) => {
   const store = new Set(['runner-a', 'runner-b']);
@@ -31,6 +31,13 @@ describe('updates', () => {
     expect(f.store.size).toBe(0);
     expect(f.replaced).toEqual(['./?v=b']);
     expect(JSON.stringify(f.ls)).toBe(f.before);
+  });
+  it('the update reload keeps the page flags and replaces an old v', async () => {
+    expect(reloadUrl('b', '?perf=1&v=a&dpr=1')).toBe('./?perf=1&v=b&dpr=1');
+    expect(reloadUrl('b')).toBe('./?v=b');
+    const f = fakes();
+    await applyUpdate('b', { ...f.deps, location: { ...f.deps.location, search: '?perf=1&autoplay=1' } });
+    expect(f.replaced).toEqual(['./?perf=1&autoplay=1&v=b']);
   });
   it('applyUpdate survives a rejecting getRegistration', async () => {
     const f = fakes(true);

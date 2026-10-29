@@ -34,7 +34,8 @@ const HIGH_DPR = 2, LOW_DPR = 1.25, HIGH_SHADOW = 2048, LOW_SHADOW = 512;
 const VIEW_AHEAD = 115;
 /** iPad / touch tablets: fewer pixels, shorter view distance, tighter fog and sparser ambient particles (steadier frame rate, less heat). */
 export const isTablet = (): boolean => typeof navigator !== 'undefined' && (/iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
-const TABLET_DPR = 1.5, TABLET_VIEW_AHEAD = 90, TABLET_FOG = 0.8;
+// Tablets render at 1x: the 2021 iPad speed test showed resolution, not effects or JS, is the limit (38 fps at 1.5x, 57 at 1x).
+const TABLET_DPR = 1, TABLET_VIEW_AHEAD = 90, TABLET_FOG = 0.8;
 const CELEBRATE_SECONDS = 2.8; // fireworks + celebration after the finish line, then the results card
 const COAST_SECONDS = 1.0;      // the runner jogs on past the line, then stops to celebrate
 const REACTION_SECONDS = 3.2; // the dog's face close-up after a mess
@@ -710,6 +711,22 @@ export class Game {
       this.renderer.setPixelRatio(this.pixelRatio);
       this.resize();
     } else if (this.quality === 'high') this.setQuality('low');
+  }
+
+  /** Speed test only: pin this quality and pixel ratio and stop the automatic quality steps. */
+  lockSetup(q: Quality, dpr: number): void {
+    this.qualityLocked = true;
+    this.setQuality(q);
+    this.pixelRatio = Math.min(dpr, window.devicePixelRatio || 1);
+    this.renderer.setPixelRatio(this.pixelRatio);
+    this.resize();
+  }
+
+  /** Back to normal after a speed test: start at full quality and let adaptQuality step down again. */
+  autoSetup(): void {
+    this.qualityLocked = false;
+    this.pixelRatio = window.devicePixelRatio || 1; // setQuality caps it at the tier's ratio
+    this.setQuality('high');
   }
 
   setQuality(q: Quality): void {
